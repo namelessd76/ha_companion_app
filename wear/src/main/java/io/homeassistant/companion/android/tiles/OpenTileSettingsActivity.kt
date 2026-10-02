@@ -43,6 +43,10 @@ class OpenTileSettingsActivity : AppCompatActivity() {
                         tileId = it
                     )
                 }
+                "ConfigElectricityPriceTile" ->
+                    HomeActivity.getElectricityPriceTileSettingsIntent(
+                        context = this
+                    )
                 else -> null
             }
 

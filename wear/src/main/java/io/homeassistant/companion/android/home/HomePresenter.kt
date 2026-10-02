@@ -1,6 +1,7 @@
 package io.homeassistant.companion.android.home
 
 import io.homeassistant.companion.android.common.data.integration.Entity
+import io.homeassistant.companion.android.common.data.prefs.impl.entities.ElectricityPriceTileConfig
 import io.homeassistant.companion.android.common.data.prefs.impl.entities.TemplateTileConfig
 import io.homeassistant.companion.android.common.data.websocket.WebSocketState
 import io.homeassistant.companion.android.common.data.websocket.impl.entities.AreaRegistryResponse
@@ -54,4 +55,7 @@ interface HomePresenter {
 
     suspend fun getWearFavoritesOnly(): Boolean
     suspend fun setWearFavoritesOnly(enabled: Boolean)
+
+    suspend fun getElectricityPriceTileConfig(): ElectricityPriceTileConfig
+    suspend fun setElectricityPriceTileConfig(config: ElectricityPriceTileConfig)
 }

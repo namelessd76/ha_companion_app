@@ -73,6 +73,7 @@ fun SettingsView(
     setFavoritesOnly: (Boolean) -> Unit,
     onClickCameraTile: () -> Unit,
     onClickTemplateTiles: () -> Unit,
+    onClickElectricityPriceTile: () -> Unit,
     onAssistantAppAllowed: (Boolean) -> Unit,
     onClickNotifications: () -> Unit
 ) {
@@ -190,6 +191,13 @@ fun SettingsView(
                 )
             }
             item {
+                SecondarySettingsChip(
+                    icon = CommunityMaterial.Icon2.cmd_flash,
+                    label = stringResource(commonR.string.electricity_price_tile),
+                    onClick = onClickElectricityPriceTile
+                )
+            }
+            item {
                 ListHeader(
                     id = commonR.string.sensors
                 )
@@ -285,6 +293,7 @@ private fun PreviewSettingsView() {
         setFavoritesOnly = {},
         onClickCameraTile = {},
         onClickTemplateTiles = {},
+        onClickElectricityPriceTile = {},
         onAssistantAppAllowed = {},
         onClickNotifications = {}
     )

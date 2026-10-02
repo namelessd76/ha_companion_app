@@ -4,12 +4,14 @@ import android.graphics.Color
 import android.graphics.drawable.Icon
 import android.util.Log
 import androidx.annotation.StringRes
+import androidx.wear.watchface.complications.data.ColorRamp
 import androidx.wear.watchface.complications.data.ComplicationData
 import androidx.wear.watchface.complications.data.ComplicationType
 import androidx.wear.watchface.complications.data.LongTextComplicationData
 import androidx.wear.watchface.complications.data.MonochromaticImage
 import androidx.wear.watchface.complications.data.PlainComplicationText
 import androidx.wear.watchface.complications.data.ShortTextComplicationData
+import androidx.wear.watchface.complications.data.RangedValueComplicationData
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
 import com.mikepenz.iconics.IconicsDrawable
@@ -24,6 +26,9 @@ import io.homeassistant.companion.android.common.data.servers.ServerManager
 import io.homeassistant.companion.android.database.wear.EntityStateComplicationsDao
 import javax.inject.Inject
 import retrofit2.HttpException
+import kotlin.math.ceil
+import kotlin.math.floor
+import kotlin.math.max
 
 @AndroidEntryPoint
 class EntityStateDataSourceService : SuspendingComplicationDataSourceService() {
@@ -39,7 +44,7 @@ class EntityStateDataSourceService : SuspendingComplicationDataSourceService() {
     }
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData? {
-        if (request.complicationType != ComplicationType.SHORT_TEXT && request.complicationType != ComplicationType.LONG_TEXT) {
+        if (request.complicationType != ComplicationType.SHORT_TEXT && request.complicationType != ComplicationType.LONG_TEXT && request.complicationType != ComplicationType.RANGED_VALUE) {
             return null
         }
 
@@ -68,9 +73,17 @@ class EntityStateDataSourceService : SuspendingComplicationDataSourceService() {
             null
         }
 
+        val number = try {
+            entity.state.toFloat()
+        } catch (t: Throwable) {
+            0.0F
+        }
+
+        val iconColor = if (number > 20F) { Color.RED } else if (number > 10F) { Color.YELLOW } else { Color.GREEN }
+
         val icon = entity.getIcon(applicationContext)
         val iconBitmap = IconicsDrawable(this, icon).apply {
-            colorInt = Color.WHITE
+            colorInt = iconColor
         }.toBitmap()
 
         val title = if (settings.showTitle) {
@@ -86,6 +99,9 @@ class EntityStateDataSourceService : SuspendingComplicationDataSourceService() {
                 appendUnitOfMeasurement = settings.showUnit
             )
         ).build()
+
+        val minValue = floor(((entity.attributes as Map<*, *>)["min"] as? Number)?.toFloat() ?: 0f)
+        val maxValue = max(30f, ceil(((entity.attributes as Map<*, *>)["max"] as? Number)?.toFloat() ?: 30f))
 
         val contentDescription = PlainComplicationText.Builder(getText(R.string.complication_entity_state_content_description)).build()
         val monochromaticImage = MonochromaticImage.Builder(Icon.createWithBitmap(iconBitmap)).build()
@@ -108,6 +124,19 @@ class EntityStateDataSourceService : SuspendingComplicationDataSourceService() {
                     contentDescription = contentDescription
                 )
                     .setTitle(title)
+                    .setTapAction(tapAction)
+                    .setMonochromaticImage(monochromaticImage)
+                    .build()
+            }
+            ComplicationType.RANGED_VALUE -> {
+                RangedValueComplicationData.Builder(
+                    value = number,
+                    min = minValue,
+                    max = maxValue,
+                    contentDescription = contentDescription
+                )
+                    .setTitle(title)
+                    .setText(text)
                     .setTapAction(tapAction)
                     .setMonochromaticImage(monochromaticImage)
                     .build()
@@ -142,6 +171,18 @@ class EntityStateDataSourceService : SuspendingComplicationDataSourceService() {
                     contentDescription = contentDescription
                 )
                     .setTitle(title)
+                    .setMonochromaticImage(monochromaticImage)
+                    .build()
+            }
+            ComplicationType.RANGED_VALUE -> {
+                RangedValueComplicationData.Builder(
+                    value = 4.28F,
+                    min = 0.0F,
+                    max = 30.0F,
+                    contentDescription = contentDescription
+                )
+                    .setTitle(title)
+                    .setText(PlainComplicationText.Builder("4.28").build())
                     .setMonochromaticImage(monochromaticImage)
                     .build()
             }

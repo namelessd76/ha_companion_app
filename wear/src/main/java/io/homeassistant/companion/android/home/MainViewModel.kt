@@ -20,6 +20,7 @@ import io.homeassistant.companion.android.BuildConfig
 import io.homeassistant.companion.android.HomeAssistantApplication
 import io.homeassistant.companion.android.common.data.integration.Entity
 import io.homeassistant.companion.android.common.data.integration.domain
+import io.homeassistant.companion.android.common.data.prefs.impl.entities.ElectricityPriceTileConfig
 import io.homeassistant.companion.android.common.data.prefs.impl.entities.TemplateTileConfig
 import io.homeassistant.companion.android.common.data.websocket.WebSocketState
 import io.homeassistant.companion.android.common.data.websocket.impl.entities.AreaRegistryResponse
@@ -99,6 +100,11 @@ class MainViewModel @Inject constructor(
     var cameraEntitiesMap = mutableStateMapOf<String, SnapshotStateList<Entity<*>>>()
         private set
 
+    var electricityPriceTileConfig by mutableStateOf(ElectricityPriceTileConfig())
+        private set
+    var electricityPriceEntitiesMap = mutableStateMapOf<String, SnapshotStateList<Entity<*>>>()
+        private set
+
     var areas = mutableListOf<AreaRegistryResponse>()
         private set
 
@@ -155,6 +161,7 @@ class MainViewModel @Inject constructor(
             templateTiles.clear()
             templateTiles.putAll(homePresenter.getAllTemplateTiles())
             isFavoritesOnly = homePresenter.getWearFavoritesOnly()
+            electricityPriceTileConfig = homePresenter.getElectricityPriceTileConfig()
 
             val assistantAppComponent = ComponentName(
                 BuildConfig.APPLICATION_ID,
@@ -245,6 +252,10 @@ class MainViewModel @Inject constructor(
             // Special list: camera entities
             val cameraEntities = it.filter { entity -> entity.domain == "camera" }
             cameraEntitiesMap["camera"] = mutableStateListOf<Entity<*>>().apply { addAll(cameraEntities) }
+
+            // Special list: sensor entities, for picking an Electricity price tile entity
+            val sensorEntities = it.filter { entity -> entity.domain == "sensor" }
+            electricityPriceEntitiesMap["sensor"] = mutableStateListOf<Entity<*>>().apply { addAll(sensorEntities) }
         }
         if (!isFavoritesOnly) {
             updateEntityDomains()
@@ -446,6 +457,30 @@ class MainViewModel @Inject constructor(
         val current = cameraTileDao.get(tileId)
         val updated = current?.copy(refreshInterval = interval) ?: CameraTile(id = tileId, refreshInterval = interval)
         cameraTileDao.add(updated)
+    }
+
+    fun setElectricityPriceTileEntity(entityId: String) {
+        viewModelScope.launch {
+            val updated = electricityPriceTileConfig.copy(entityId = entityId)
+            homePresenter.setElectricityPriceTileConfig(updated)
+            electricityPriceTileConfig = updated
+        }
+    }
+
+    fun setElectricityPriceTileCurrentPriceEntity(entityId: String) {
+        viewModelScope.launch {
+            val updated = electricityPriceTileConfig.copy(currentPriceEntityId = entityId)
+            homePresenter.setElectricityPriceTileConfig(updated)
+            electricityPriceTileConfig = updated
+        }
+    }
+
+    fun setElectricityPriceTileRefreshInterval(interval: Int) {
+        viewModelScope.launch {
+            val updated = electricityPriceTileConfig.copy(refreshInterval = interval)
+            homePresenter.setElectricityPriceTileConfig(updated)
+            electricityPriceTileConfig = updated
+        }
     }
 
     fun setTileShortcut(tileId: Int?, index: Int, entity: SimplifiedEntity) {

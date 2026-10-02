@@ -20,6 +20,7 @@ import io.homeassistant.companion.android.common.sensors.id
 import io.homeassistant.companion.android.home.MainViewModel
 import io.homeassistant.companion.android.theme.WearAppTheme
 import io.homeassistant.companion.android.tiles.CameraTile
+import io.homeassistant.companion.android.tiles.ElectricityPriceTile
 import io.homeassistant.companion.android.tiles.ShortcutsTile
 import io.homeassistant.companion.android.tiles.TemplateTile
 import io.homeassistant.companion.android.views.ChooseEntityView
@@ -50,11 +51,17 @@ private const val SCREEN_SET_SHORTCUTS_TILE = "set_shortcuts_tile"
 private const val SCREEN_SHORTCUTS_TILE_CHOOSE_ENTITY = "shortcuts_tile_choose_entity"
 private const val SCREEN_SET_TILE_TEMPLATE = "set_tile_template"
 private const val SCREEN_SET_TILE_TEMPLATE_REFRESH_INTERVAL = "set_tile_template_refresh_interval"
+private const val ROUTE_ELECTRICITY_PRICE_TILE = "electricity_price_tile"
+private const val SCREEN_SET_ELECTRICITY_PRICE_TILE = "set_electricity_price_tile"
+private const val SCREEN_SET_ELECTRICITY_PRICE_TILE_ENTITY = "entity"
+private const val SCREEN_SET_ELECTRICITY_PRICE_TILE_CURRENT_PRICE_ENTITY = "current_price_entity"
+private const val SCREEN_SET_ELECTRICITY_PRICE_TILE_REFRESH_INTERVAL = "refresh_interval"
 
 const val DEEPLINK_SENSOR_MANAGER = "ha_wear://$SCREEN_SINGLE_SENSOR_MANAGER"
 const val DEEPLINK_PREFIX_SET_CAMERA_TILE = "ha_wear://$SCREEN_SET_CAMERA_TILE"
 const val DEEPLINK_PREFIX_SET_SHORTCUT_TILE = "ha_wear://$SCREEN_SET_SHORTCUTS_TILE"
 const val DEEPLINK_PREFIX_SET_TEMPLATE_TILE = "ha_wear://$SCREEN_SET_TILE_TEMPLATE"
+const val DEEPLINK_SET_ELECTRICITY_PRICE_TILE = "ha_wear://$SCREEN_SET_ELECTRICITY_PRICE_TILE"
 
 @Composable
 fun LoadHomePage(
@@ -176,6 +183,11 @@ fun LoadHomePage(
                     onClickTemplateTiles = {
                         mainViewModel.loadTemplateTiles()
                         swipeDismissableNavController.navigate("$ROUTE_TEMPLATE_TILE/$SCREEN_SELECT_TEMPLATE_TILE")
+                    },
+                    onClickElectricityPriceTile = {
+                        swipeDismissableNavController.navigate(
+                            "$ROUTE_ELECTRICITY_PRICE_TILE/$SCREEN_SET_ELECTRICITY_PRICE_TILE"
+                        )
                     },
                     onAssistantAppAllowed = mainViewModel::setAssistantApp,
                     onClickNotifications = {
@@ -383,6 +395,77 @@ fun LoadHomePage(
                 ) {
                     mainViewModel.setTemplateTileRefreshInterval(tileId, it)
                     TileService.getUpdater(context).requestUpdate(TemplateTile::class.java)
+                    swipeDismissableNavController.navigateUp()
+                }
+            }
+            composable(
+                route = "$ROUTE_ELECTRICITY_PRICE_TILE/$SCREEN_SET_ELECTRICITY_PRICE_TILE",
+                deepLinks = listOf(
+                    navDeepLink { uriPattern = DEEPLINK_SET_ELECTRICITY_PRICE_TILE }
+                )
+            ) {
+                SetElectricityPriceTileView(
+                    tile = mainViewModel.electricityPriceTileConfig,
+                    entities = mainViewModel.electricityPriceEntitiesMap["sensor"],
+                    onSelectEntity = {
+                        swipeDismissableNavController.navigate(
+                            "$ROUTE_ELECTRICITY_PRICE_TILE/$SCREEN_SET_ELECTRICITY_PRICE_TILE_ENTITY"
+                        )
+                    },
+                    onSelectCurrentPriceEntity = {
+                        swipeDismissableNavController.navigate(
+                            "$ROUTE_ELECTRICITY_PRICE_TILE/$SCREEN_SET_ELECTRICITY_PRICE_TILE_CURRENT_PRICE_ENTITY"
+                        )
+                    },
+                    onSelectRefreshInterval = {
+                        swipeDismissableNavController.navigate(
+                            "$ROUTE_ELECTRICITY_PRICE_TILE/$SCREEN_SET_ELECTRICITY_PRICE_TILE_REFRESH_INTERVAL"
+                        )
+                    }
+                )
+            }
+            composable("$ROUTE_ELECTRICITY_PRICE_TILE/$SCREEN_SET_ELECTRICITY_PRICE_TILE_ENTITY") {
+                val electricityPriceDomains = remember { mutableStateListOf("sensor") }
+                val electricityPriceFavorites = remember { mutableStateOf(emptyList<String>()) } // There are no favorites for this picker
+                ChooseEntityView(
+                    entitiesByDomainOrder = electricityPriceDomains,
+                    entitiesByDomain = mainViewModel.electricityPriceEntitiesMap,
+                    favoriteEntityIds = electricityPriceFavorites,
+                    onNoneClicked = {},
+                    onEntitySelected = { entity ->
+                        mainViewModel.setElectricityPriceTileEntity(entity.entityId)
+                        ElectricityPriceTile.requestUpdate(context)
+                        swipeDismissableNavController.navigateUp()
+                    },
+                    allowNone = false
+                )
+            }
+            composable("$ROUTE_ELECTRICITY_PRICE_TILE/$SCREEN_SET_ELECTRICITY_PRICE_TILE_CURRENT_PRICE_ENTITY") {
+                val electricityPriceDomains = remember { mutableStateListOf("sensor") }
+                val electricityPriceFavorites = remember { mutableStateOf(emptyList<String>()) } // There are no favorites for this picker
+                ChooseEntityView(
+                    entitiesByDomainOrder = electricityPriceDomains,
+                    entitiesByDomain = mainViewModel.electricityPriceEntitiesMap,
+                    favoriteEntityIds = electricityPriceFavorites,
+                    onNoneClicked = {
+                        mainViewModel.setElectricityPriceTileCurrentPriceEntity("")
+                        ElectricityPriceTile.requestUpdate(context)
+                        swipeDismissableNavController.navigateUp()
+                    },
+                    onEntitySelected = { entity ->
+                        mainViewModel.setElectricityPriceTileCurrentPriceEntity(entity.entityId)
+                        ElectricityPriceTile.requestUpdate(context)
+                        swipeDismissableNavController.navigateUp()
+                    },
+                    allowNone = true
+                )
+            }
+            composable("$ROUTE_ELECTRICITY_PRICE_TILE/$SCREEN_SET_ELECTRICITY_PRICE_TILE_REFRESH_INTERVAL") {
+                RefreshIntervalPickerView(
+                    currentInterval = mainViewModel.electricityPriceTileConfig.refreshInterval
+                ) { interval ->
+                    mainViewModel.setElectricityPriceTileRefreshInterval(interval)
+                    ElectricityPriceTile.requestUpdate(context)
                     swipeDismissableNavController.navigateUp()
                 }
             }
