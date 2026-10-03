@@ -3,19 +3,21 @@ package io.homeassistant.companion.android.tiles
 import android.content.Context
 import android.util.Log
 import androidx.wear.protolayout.ColorBuilders.argb
+import androidx.wear.protolayout.DimensionBuilders.ContainerDimension
 import androidx.wear.protolayout.DimensionBuilders.dp
+import androidx.wear.protolayout.DimensionBuilders.expand
 import androidx.wear.protolayout.DimensionBuilders.sp
+import androidx.wear.protolayout.DimensionBuilders.weight
 import androidx.wear.protolayout.LayoutElementBuilders
 import androidx.wear.protolayout.LayoutElementBuilders.Box
 import androidx.wear.protolayout.LayoutElementBuilders.Column
 import androidx.wear.protolayout.LayoutElementBuilders.FONT_WEIGHT_BOLD
 import androidx.wear.protolayout.LayoutElementBuilders.HORIZONTAL_ALIGN_CENTER
-import androidx.wear.protolayout.LayoutElementBuilders.HORIZONTAL_ALIGN_START
 import androidx.wear.protolayout.LayoutElementBuilders.LayoutElement
 import androidx.wear.protolayout.LayoutElementBuilders.Row
 import androidx.wear.protolayout.LayoutElementBuilders.Spacer
 import androidx.wear.protolayout.LayoutElementBuilders.VERTICAL_ALIGN_BOTTOM
-import androidx.wear.protolayout.LayoutElementBuilders.VERTICAL_ALIGN_TOP
+import androidx.wear.protolayout.LayoutElementBuilders.VERTICAL_ALIGN_CENTER
 import androidx.wear.protolayout.ModifiersBuilders
 import androidx.wear.protolayout.ResourceBuilders
 import androidx.wear.protolayout.ResourceBuilders.Resources
@@ -50,7 +52,7 @@ import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.launch
 
 /** A single price entry (typically a 15-minute interval) parsed from a forecast entity's attributes. */
-data class HourlyPrice(val time: Instant, val price: Double)
+data class HourlyPrice(val time: ZonedDateTime, val price: Double)
 
 /** Describes where to look for interval price data on an entity's attributes. */
 private data class ForecastSource(
@@ -67,12 +69,6 @@ private data class ForecastSource(
 private val FORECAST_SOURCES = listOf(
     // HA
     ForecastSource(listOf("data"), listOf("DateTime"), listOf("TotalPrice")),
-    // Nord Pool integration: 'raw_today'/'raw_tomorrow', each a list of {start, end, value}
-    ForecastSource(listOf("raw_today", "raw_tomorrow"), listOf("start"), listOf("value")),
-    // Generic: a single 'forecast' attribute, a list of {start/time, price/value}
-    ForecastSource(listOf("forecast"), listOf("start", "time"), listOf("price", "value")),
-    // Tibber-style: 'today'/'tomorrow', each a list of {startsAt, total}
-    ForecastSource(listOf("today", "tomorrow"), listOf("startsAt", "start"), listOf("total", "price"))
 )
 
 private const val PRICE_LOW_MAX = 15.0 // below this: green
@@ -83,23 +79,20 @@ private const val COLOR_MEDIUM = 0xFFFB8C00.toInt() // orange
 private const val COLOR_HIGH = 0xFFE53935.toInt() // red
 
 private const val WINDOW_HOURS = 12L
-private const val AXIS_STEP = 10.0 // c/kWh between value axis ticks
+private const val AXIS_STEP = 5.0 // c/kWh between value axis ticks
 private const val LABEL_EVERY_N_HOURS = 2 // timeline labels are shown only for every other hour
 
-// Bar chart dimensions (dp). Bar width/spacing are computed at runtime from the device's screen
-// width (e.g. ~195-240dp for a ~488x488px round display, depending on density) so a dense trend of
-// 15-minute bars over 12 hours (up to 48 bars) always fits.
+// Bar chart dimensions. Bars and the gaps between them are all sized with weighted expand()
+// dimensions (see barsRow), so the renderer itself divides up whatever width is actually
+// available (accounting for round-screen clipping etc.) instead of us trying to pre-compute it in
+// dp from screenWidthDp, which can never exactly match the real available space.
 private const val BAR_AREA_HEIGHT_DP = 88f
 private const val BAR_MIN_HEIGHT_DP = 2f
-private const val BAR_MIN_WIDTH_DP = 1.2f
-private const val BAR_MIN_SPACING_DP = 0.4f
-private const val BAR_SPACING_RATIO = 0.35f // spacing between bars, relative to bar width
-private const val USABLE_WIDTH_FRACTION = 0.90f // fraction of screen width usable across a round display's center
+private const val BAR_SPACING_RATIO = 0.35f // gap weight, relative to a bar's weight of 1
 
 // Value axis (shown on both sides of the trend, from 0 to a max rounded up to the next AXIS_STEP)
 private const val AXIS_LABEL_WIDTH_DP = 14f
 private const val AXIS_GAP_DP = 3f
-private const val AXIS_LABEL_LINE_HEIGHT_DP = 10f
 private const val AXIS_FONT_SIZE_SP = 7f
 private const val HOUR_LABEL_FONT_SIZE_SP = 8f
 
@@ -156,7 +149,7 @@ class ElectricityPriceTile : TileService() {
          *   entry that covers [now]. Works regardless of the source's reporting interval (e.g. 15
          *   minutes or hourly).
          */
-        fun nextWindow(all: List<HourlyPrice>, now: Instant = Instant.now().truncatedTo(ChronoUnit.HOURS), windowHours: Long = WINDOW_HOURS): List<HourlyPrice> {
+        fun nextWindow(all: List<HourlyPrice>, now: ZonedDateTime = Instant.now().truncatedTo(ChronoUnit.HOURS).atZone(ZoneId.systemDefault()), windowHours: Long = WINDOW_HOURS): List<HourlyPrice> {
             if (all.isEmpty()) return emptyList()
             val startIndex = all.indexOfLast { it.time <= now }.let { if (it == -1) 0 else it }
             val windowEnd = all[startIndex].time.plus(Duration.ofHours(windowHours))
@@ -164,41 +157,31 @@ class ElectricityPriceTile : TileService() {
         }
 
         /** @return the top value axis tick: the trend's max price rounded up to the next [AXIS_STEP]. */
-        fun axisMaxFor(prices: List<HourlyPrice>): Int {
+        fun axisMaxFor(prices: List<HourlyPrice>): Pair<Int, Double> {
             val maxPrice = prices.maxOfOrNull { it.price } ?: 0.0
-            val rounded = (ceil(maxPrice / AXIS_STEP) * AXIS_STEP).toInt()
-            return rounded.coerceAtLeast(AXIS_STEP.toInt())
-        }
-
-        /**
-         * @return the (barWidth, spacing) dp to use for [barCount] bars so the whole chart -
-         *   including the value axis on both sides - fits within [screenWidthDp].
-         */
-        fun barMetrics(screenWidthDp: Int, barCount: Int): Pair<Float, Float> {
-            if (barCount <= 0) return BAR_MIN_WIDTH_DP to BAR_MIN_SPACING_DP
-            val usableWidth = screenWidthDp * USABLE_WIDTH_FRACTION
-            val axisOverhead = 2 * (AXIS_LABEL_WIDTH_DP + AXIS_GAP_DP)
-            val barsAreaWidth = (usableWidth - axisOverhead).coerceAtLeast(barCount * BAR_MIN_WIDTH_DP)
-            val spacingUnits = (barCount - 1) * BAR_SPACING_RATIO
-            val barWidth = (barsAreaWidth / (barCount + spacingUnits)).coerceAtLeast(BAR_MIN_WIDTH_DP)
-            val spacing = (barWidth * BAR_SPACING_RATIO).coerceAtLeast(BAR_MIN_SPACING_DP)
-            return barWidth to spacing
+            var axisStep = AXIS_STEP;
+            while (maxPrice / axisStep > 5)
+            {
+                axisStep += AXIS_STEP;
+            }
+            val rounded = (ceil(maxPrice / axisStep) * axisStep).toInt()
+            return rounded.coerceAtLeast(axisStep.toInt()) to axisStep
         }
 
         private fun parseHourlyList(raw: Any?, timeKeys: List<String>, priceKeys: List<String>): List<HourlyPrice> {
             val list = raw as? List<*> ?: return emptyList()
             return list.mapNotNull { item ->
                 val map = item as? Map<*, *> ?: return@mapNotNull null
-                val time = timeKeys.firstNotNullOfOrNull { key -> parseInstant(map[key]) } ?: return@mapNotNull null
+                val time = timeKeys.firstNotNullOfOrNull { key -> parseTime(map[key]) } ?: return@mapNotNull null
                 val price = priceKeys.firstNotNullOfOrNull { key -> parsePrice(map[key]) } ?: return@mapNotNull null
                 HourlyPrice(time, price)
             }
         }
 
-        private fun parseInstant(value: Any?): Instant? {
+        private fun parseTime(value: Any?): ZonedDateTime? {
             val text = value as? String ?: return null
-            return runCatching { OffsetDateTime.parse(text).atZoneSameInstant(ZoneId.systemDefault()).toInstant() }
-                .recoverCatching { Instant.parse(text) }
+            return runCatching { OffsetDateTime.parse(text).atZoneSameInstant(ZoneId.systemDefault()) }
+                .recoverCatching { ZonedDateTime.parse(text) }
                 .getOrNull()
         }
 
@@ -235,7 +218,7 @@ class ElectricityPriceTile : TileService() {
                 .setFreshnessIntervalMillis(freshness.toLong() * 1000)
                 .setTileTimeline(
                     if (serverManager.isRegistered()) {
-                        timeline(config, requestParams.deviceConfiguration.screenWidthDp)
+                        timeline(config)
                     } else {
                         loggedOutTimeline(
                             this@ElectricityPriceTile,
@@ -281,7 +264,7 @@ class ElectricityPriceTile : TileService() {
         serviceJob.cancel()
     }
 
-    private suspend fun timeline(config: ElectricityPriceTileConfig, screenWidthDp: Int): Timeline {
+    private suspend fun timeline(config: ElectricityPriceTileConfig): Timeline {
         val forecastEntity = getEntityOrNull(config.entityId)
         val allPrices = forecastEntity?.let { extractHourlyPrices(it.attributes) }.orEmpty()
         val upcoming = nextWindow(allPrices)
@@ -293,7 +276,7 @@ class ElectricityPriceTile : TileService() {
             ?: (forecastEntity?.attributes?.get("unit_of_measurement") as? String)
             ?: ""
 
-        return Timeline.fromLayoutElement(layout(config.entityId.isBlank(), currentPrice, unit, upcoming, screenWidthDp))
+        return Timeline.fromLayoutElement(layout(config.entityId.isBlank(), currentPrice, unit, upcoming))
     }
 
     private suspend fun getEntityOrNull(entityId: String): Entity<Map<String, Any>>? {
@@ -310,11 +293,10 @@ class ElectricityPriceTile : TileService() {
         requiresSetup: Boolean,
         currentPrice: Double?,
         unit: String,
-        prices: List<HourlyPrice>,
-        screenWidthDp: Int
-    ): LayoutElement = Box.Builder().apply {
+        prices: List<HourlyPrice>
+    ): LayoutElement = Box.Builder().setWidth(expand()).setHeight(expand()).apply {
         addContent(
-            Column.Builder().apply {
+            Column.Builder().setWidth(expand()).apply {
                 setHorizontalAlignment(HORIZONTAL_ALIGN_CENTER)
                 if (requiresSetup || prices.isEmpty()) {
                     addContent(
@@ -336,10 +318,9 @@ class ElectricityPriceTile : TileService() {
                         addContent(headlineText(currentPrice, unit))
                         addContent(Spacer.Builder().setHeight(dp(6f)).build())
                     }
-                    val (barWidth, spacing) = barMetrics(screenWidthDp, prices.size)
-                    addContent(chartRow(prices, barWidth, spacing))
+                    addContent(chartRow(prices))
                     addContent(Spacer.Builder().setHeight(dp(4f)).build())
-                    addContent(hourLabelsRow(prices, barWidth, spacing))
+                    addContent(hourLabelsRow(prices))
                 }
             }.build()
         )
@@ -363,53 +344,68 @@ class ElectricityPriceTile : TileService() {
     }
 
     /** The bar chart with a value axis (0..max, step [AXIS_STEP]) on both ends of the trend. */
-    private fun chartRow(prices: List<HourlyPrice>, barWidth: Float, spacing: Float): LayoutElement {
-        val axisMax = axisMaxFor(prices)
+    private fun chartRow(prices: List<HourlyPrice>): LayoutElement {
+        val (axisMax, axisStep) = axisMaxFor(prices)
         return Row.Builder()
-            .addContent(axisColumn(axisMax))
+            .setWidth(expand())
+            .addContent(axisColumn(axisMax, axisStep))
             .addContent(Spacer.Builder().setWidth(dp(AXIS_GAP_DP)).build())
-            .addContent(chartArea(prices, axisMax, barWidth, spacing))
+            .addContent(chartArea(prices, axisMax, axisStep))
             .addContent(Spacer.Builder().setWidth(dp(AXIS_GAP_DP)).build())
-            .addContent(axisColumn(axisMax))
+            .addContent(axisColumn(axisMax, axisStep))
             .build()
     }
 
     /**
      * The bars, stacked on top of the background grid (horizontal price-tag lines and vertical
-     * hour separators) so the grid is drawn first and sits behind/under the bars.
+     * hour separators) so the grid is drawn first and sits behind/under the bars. Fills whatever
+     * width [chartRow] has left over after its two fixed-width axis columns.
      */
-    private fun chartArea(prices: List<HourlyPrice>, axisMax: Int, barWidth: Float, spacing: Float): LayoutElement {
-        val totalWidth = prices.size * barWidth + (prices.size - 1) * spacing
-        return Box.Builder()
-            .setWidth(dp(totalWidth))
+    private fun chartArea(prices: List<HourlyPrice>, axisMax: Int, axisStep: Double): LayoutElement =
+        Box.Builder()
+            .setWidth(expand())
             .setHeight(dp(BAR_AREA_HEIGHT_DP))
-            .addContent(gridLinesLayer(axisMax, totalWidth))
-            .addContent(hourSeparatorsLayer(prices, barWidth, spacing))
-            .addContent(barsRow(prices, axisMax, barWidth, spacing))
+            .addContent(gridLinesLayer(axisMax, axisStep))
+            .addContent(barsRow(prices, axisMax, axisStep))
             .build()
-    }
 
-    /** A dark gray horizontal line for every price tag on the value axis (ticks above 0), evenly spaced. */
-    private fun gridLinesLayer(axisMax: Int, width: Float): LayoutElement {
-        val stepCount = (axisMax / AXIS_STEP.toInt()).coerceAtLeast(1)
-        val slotHeight = BAR_AREA_HEIGHT_DP / stepCount
-        return Column.Builder().apply {
-            repeat(stepCount) {
-                addContent(
-                    Box.Builder()
-                        .setWidth(dp(width))
-                        .setHeight(dp(slotHeight))
-                        .setVerticalAlignment(VERTICAL_ALIGN_TOP)
-                        .addContent(gridLine(width))
-                        .build()
-                )
-            }
+    /**
+     * The value axis ticks, from [axisMax] down to 0 in steps of [axisStep]. [axisColumn] and
+     * [gridLinesLayer] both build their Column out of these same equally-sized, centered slots -
+     * one slot per tick - so a tick's printed value and its background line always land in
+     * exactly the same slot and therefore share the same vertical center, however tall the
+     * slot's own content (text vs. a thin line) happens to be.
+     */
+    private fun axisTicks(axisMax: Int, axisStep: Double): List<Int> =
+        (axisMax downTo 0 step axisStep.toInt()).toList()
+
+    private fun axisSlotHeight(tickCount: Int): Float = BAR_AREA_HEIGHT_DP / tickCount
+
+    /** A [width]x[height] slot with [content] centered both horizontally and vertically within it. */
+    private fun centeredSlot(width: ContainerDimension, height: Float, content: LayoutElement): LayoutElement =
+        Box.Builder()
+            .setWidth(width)
+            .setHeight(dp(height))
+            .setHorizontalAlignment(HORIZONTAL_ALIGN_CENTER)
+            .setVerticalAlignment(VERTICAL_ALIGN_CENTER)
+            .addContent(content)
+            .build()
+
+    /**
+     * A dark gray horizontal line for every price tag on the value axis (0..[axisMax]), evenly
+     * spaced, filling whatever width [chartArea] actually has.
+     */
+    private fun gridLinesLayer(axisMax: Int, axisStep: Double): LayoutElement {
+        val ticks = axisTicks(axisMax, axisStep)
+        val slotHeight = axisSlotHeight(ticks.size)
+        return Column.Builder().setWidth(expand()).apply {
+            ticks.forEach { addContent(centeredSlot(expand(), slotHeight, gridLine())) }
         }.build()
     }
 
-    private fun gridLine(width: Float): LayoutElement =
+    private fun gridLine(): LayoutElement =
         Box.Builder()
-            .setWidth(dp(width))
+            .setWidth(expand())
             .setHeight(dp(GRID_LINE_THICKNESS_DP))
             .setModifiers(
                 ModifiersBuilders.Modifiers.Builder()
@@ -420,58 +416,17 @@ class ElectricityPriceTile : TileService() {
             )
             .build()
 
-    /** A dark gray vertical separator line at the start of every hour. */
-    private fun hourSeparatorsLayer(prices: List<HourlyPrice>, barWidth: Float, spacing: Float): LayoutElement {
-        val zone = ZoneId.systemDefault()
-        val groups = prices.groupBy { it.time.atZone(zone).truncatedTo(ChronoUnit.HOURS) }.toList()
-
-        return Row.Builder().apply {
-            groups.forEachIndexed { groupIndex, (_, entriesInHour) ->
-                if (groupIndex > 0) addContent(Spacer.Builder().setWidth(dp(spacing)).build())
-                val groupWidth = entriesInHour.size * barWidth + (entriesInHour.size - 1) * spacing
-                addContent(
-                    Box.Builder()
-                        .setWidth(dp(groupWidth))
-                        .setHeight(dp(BAR_AREA_HEIGHT_DP))
-                        .setHorizontalAlignment(HORIZONTAL_ALIGN_START)
-                        .addContent(verticalSeparatorLine())
-                        .build()
-                )
-            }
-        }.build()
-    }
-
-    private fun verticalSeparatorLine(): LayoutElement =
-        Box.Builder()
-            .setWidth(dp(HOUR_SEPARATOR_THICKNESS_DP))
-            .setHeight(dp(BAR_AREA_HEIGHT_DP))
-            .setModifiers(
-                ModifiersBuilders.Modifiers.Builder()
-                    .setBackground(
-                        ModifiersBuilders.Background.Builder().setColor(argb(HOUR_SEPARATOR_COLOR)).build()
-                    )
-                    .build()
-            )
-            .build()
-
-    private fun axisColumn(axisMax: Int): LayoutElement {
-        val ticks = (axisMax downTo 0 step AXIS_STEP.toInt()).toList()
-        val stepCount = ticks.size - 1
-        val gapHeight = if (stepCount > 0) {
-            ((BAR_AREA_HEIGHT_DP - ticks.size * AXIS_LABEL_LINE_HEIGHT_DP) / stepCount).coerceAtLeast(0f)
-        } else {
-            0f
-        }
+    private fun axisColumn(axisMax: Int, axisStep: Double): LayoutElement {
+        val ticks = axisTicks(axisMax, axisStep)
+        val slotHeight = axisSlotHeight(ticks.size)
 
         return Box.Builder()
             .setWidth(dp(AXIS_LABEL_WIDTH_DP))
             .setHeight(dp(BAR_AREA_HEIGHT_DP))
-            .setHorizontalAlignment(HORIZONTAL_ALIGN_CENTER)
             .addContent(
                 Column.Builder().apply {
-                    ticks.forEachIndexed { index, tick ->
-                        addContent(axisTickText(tick))
-                        if (index < ticks.lastIndex) addContent(Spacer.Builder().setHeight(dp(gapHeight)).build())
+                    ticks.forEach { tick ->
+                        addContent(centeredSlot(dp(AXIS_LABEL_WIDTH_DP), slotHeight, axisTickText(tick)))
                     }
                 }.build()
             )
@@ -484,37 +439,109 @@ class ElectricityPriceTile : TileService() {
             .setFontStyle(LayoutElementBuilders.FontStyle.Builder().setSize(sp(AXIS_FONT_SIZE_SP)).build())
             .build()
 
-    /** One bar per entry in [prices], scaled against the fixed 0..[axisMax] value axis. */
-    private fun barsRow(prices: List<HourlyPrice>, axisMax: Int, barWidth: Float, spacing: Float): LayoutElement =
-        Row.Builder().apply {
+    /**
+     * The bars, plus the hour separators - built together as one alternating sequence of bars and
+     * gaps, so both share the exact same per-bar weighting and can never drift out of alignment
+     * with each other. There is a gap both before the first bar and after the last, as well as
+     * between every pair of bars: [prices].size + 1 gaps in total. Each gap is either empty, or -
+     * at an hour boundary - a dark gray vertical separator line, drawn *in* the gap itself rather
+     * than behind/under a bar (where it would be invisible).
+     *
+     * Every bar has a weighted [expand] width of 1, and every gap a weighted width of
+     * [BAR_SPACING_RATIO], so the renderer itself divides up whatever width [chartArea] actually
+     * ends up with - exactly, with nothing left over to clip and nothing pre-computed in dp that
+     * could drift out of sync with the real available space.
+     *
+     * Bars are scaled against the fixed 0..[axisMax] value axis, but *not* across the full
+     * [BAR_AREA_HEIGHT_DP]: since [axisColumn]/[gridLinesLayer] center each tick within its own
+     * slot, the "0" and [axisMax] lines sit half a slot in from the box's true top/bottom edges,
+     * not right on them. Bars are inset by that same half-slot on both ends (see [edgeInset]) so a
+     * price of 0 lines up exactly with the "0" line, and a price of [axisMax] with the top line.
+     */
+    private fun barsRow(prices: List<HourlyPrice>, axisMax: Int, axisStep: Double): LayoutElement {
+        val slotHeight = axisSlotHeight(axisTicks(axisMax, axisStep).size)
+        val edgeInset = slotHeight / 2f
+        val chartHeight = BAR_AREA_HEIGHT_DP - edgeInset * 2f
+
+        // The reported interval between entries (e.g. 15 minutes), used to tell whether the last
+        // bar's interval reaches exactly into the next hour.
+        val interval = if (prices.size >= 2) Duration.between(prices[0].time, prices[1].time) else Duration.ZERO
+        fun isHourStart(time: ZonedDateTime) = time == time.truncatedTo(ChronoUnit.HOURS)
+        fun isHourEnd(time: ZonedDateTime) = interval > Duration.ZERO && isHourStart(time.plus(interval))
+
+        val bars = Row.Builder().setWidth(expand()).apply {
+            // Leading gap, before the very first bar.
+            addContent(gapOrSeparator(chartHeight, isHourStart(prices.first().time)))
             prices.forEachIndexed { index, entry ->
-                if (index > 0) addContent(Spacer.Builder().setWidth(dp(spacing)).build())
                 val ratio = (entry.price / axisMax).coerceIn(0.0, 1.0)
-                val barHeight = BAR_MIN_HEIGHT_DP + ratio.toFloat() * (BAR_AREA_HEIGHT_DP - BAR_MIN_HEIGHT_DP)
-                addContent(
-                    Box.Builder()
-                        .setWidth(dp(barWidth))
-                        .setHeight(dp(BAR_AREA_HEIGHT_DP))
-                        .setVerticalAlignment(VERTICAL_ALIGN_BOTTOM)
-                        .addContent(
-                            Box.Builder()
-                                .setWidth(dp(barWidth))
-                                .setHeight(dp(barHeight))
-                                .setModifiers(
-                                    ModifiersBuilders.Modifiers.Builder()
-                                        .setBackground(
-                                            ModifiersBuilders.Background.Builder()
-                                                .setColor(argb(colorForPrice(entry.price)))
-                                                .build()
-                                        )
-                                        .build()
-                                )
-                                .build()
-                        )
-                        .build()
-                )
+                val barHeight = BAR_MIN_HEIGHT_DP + ratio.toFloat() * (chartHeight - BAR_MIN_HEIGHT_DP)
+                addContent(barCell(chartHeight, barHeight, colorForPrice(entry.price)))
+                // The gap after this bar: a boundary if the next bar starts a new hour, or - for
+                // the trailing gap after the very last bar - if this bar's own interval reaches
+                // exactly into the next hour.
+                val showSeparator = if (index < prices.lastIndex) {
+                    isHourStart(prices[index + 1].time)
+                } else {
+                    isHourEnd(entry.time)
+                }
+                addContent(gapOrSeparator(chartHeight, showSeparator))
             }
         }.build()
+
+        return Column.Builder()
+            .setWidth(expand())
+            .addContent(Spacer.Builder().setHeight(dp(edgeInset)).build())
+            .addContent(bars)
+            .addContent(Spacer.Builder().setHeight(dp(edgeInset)).build())
+            .build()
+    }
+
+    /** A single price bar, weighted 1, bottom-anchored within its [chartHeight]-tall cell. */
+    private fun barCell(chartHeight: Float, barHeight: Float, color: Int): LayoutElement =
+        Box.Builder()
+            .setWidth(weight(1f))
+            .setHeight(dp(chartHeight))
+            .setVerticalAlignment(VERTICAL_ALIGN_BOTTOM)
+            .addContent(
+                Box.Builder()
+                    .setWidth(expand())
+                    .setHeight(dp(barHeight))
+                    .setModifiers(
+                        ModifiersBuilders.Modifiers.Builder()
+                            .setBackground(
+                                ModifiersBuilders.Background.Builder().setColor(argb(color)).build()
+                            )
+                            .build()
+                    )
+                    .build()
+            )
+            .build()
+
+    /** A gap between bars, weighted [BAR_SPACING_RATIO]: empty, or - at an hour boundary - a vertical separator line. */
+    private fun gapOrSeparator(height: Float, showSeparator: Boolean): LayoutElement =
+        if (showSeparator) {
+            Box.Builder()
+                .setWidth(weight(BAR_SPACING_RATIO))
+                .setHeight(dp(height))
+                .setHorizontalAlignment(HORIZONTAL_ALIGN_CENTER)
+                .addContent(verticalSeparatorLine(height))
+                .build()
+        } else {
+            Spacer.Builder().setWidth(weight(BAR_SPACING_RATIO)).build()
+        }
+
+    private fun verticalSeparatorLine(height: Float): LayoutElement =
+        Box.Builder()
+            .setWidth(dp(HOUR_SEPARATOR_THICKNESS_DP))
+            .setHeight(dp(height))
+            .setModifiers(
+                ModifiersBuilders.Modifiers.Builder()
+                    .setBackground(
+                        ModifiersBuilders.Background.Builder().setColor(argb(HOUR_SEPARATOR_COLOR)).build()
+                    )
+                    .build()
+            )
+            .build()
 
     /**
      * Hour-only labels under the bars (minutes omitted), shown every [LABEL_EVERY_N_HOURS] hours,
@@ -522,20 +549,23 @@ class ElectricityPriceTile : TileService() {
      * very last bar (e.g. bars ending at 13:45 also get a "14" label). Offset on both sides to
      * line up under [barsRow] rather than under the value axis columns.
      */
-    private fun hourLabelsRow(prices: List<HourlyPrice>, barWidth: Float, spacing: Float): LayoutElement {
-        val zone = ZoneId.systemDefault()
+    private fun hourLabelsRow(prices: List<HourlyPrice>): LayoutElement {
         val formatter = DateTimeFormatter.ofPattern("HH")
         val groups: List<Pair<ZonedDateTime, List<HourlyPrice>>> = prices
-            .groupBy { it.time.atZone(zone).truncatedTo(ChronoUnit.HOURS) }
+            .groupBy { it.time.truncatedTo(ChronoUnit.HOURS) }
             .toList()
 
-        val bars = Row.Builder().apply {
+        // Same weights barsRow uses per bar (1) and per gap (BAR_SPACING_RATIO), just summed up
+        // per hour-group here, so this row's groups land at the same relative positions as the
+        // real bars - however the renderer ends up dividing up the actual available width.
+        fun groupWeight(entryCount: Int) = entryCount * 1f + (entryCount - 1) * BAR_SPACING_RATIO
+
+        val bars = Row.Builder().setWidth(expand()).apply {
             groups.forEachIndexed { groupIndex, (hourStart, entriesInHour) ->
-                if (groupIndex > 0) addContent(Spacer.Builder().setWidth(dp(spacing)).build())
-                val groupWidth = entriesInHour.size * barWidth + (entriesInHour.size - 1) * spacing
+                if (groupIndex > 0) addContent(Spacer.Builder().setWidth(weight(BAR_SPACING_RATIO)).build())
                 addContent(
                     Box.Builder()
-                        .setWidth(dp(groupWidth * 2))
+                        .setWidth(weight(groupWeight(entriesInHour.size) * 2))
                         .setHorizontalAlignment(HORIZONTAL_ALIGN_CENTER)
                         .apply {
                             if (groupIndex % LABEL_EVERY_N_HOURS == 0) {
@@ -549,11 +579,10 @@ class ElectricityPriceTile : TileService() {
             // get a "14" label, marking the end of that last interval), since that boundary isn't
             // the start of any hour group and so isn't covered by the loop above.
             groups.lastOrNull()?.let { (lastHourStart, lastEntries) ->
-                addContent(Spacer.Builder().setWidth(dp(spacing)).build())
-                val lastGroupWidth = lastEntries.size * barWidth + (lastEntries.size - 1) * spacing
+                addContent(Spacer.Builder().setWidth(weight(BAR_SPACING_RATIO)).build())
                 addContent(
                     Box.Builder()
-                        .setWidth(dp(lastGroupWidth * 2))
+                        .setWidth(weight(groupWeight(lastEntries.size) * 2))
                         .setHorizontalAlignment(HORIZONTAL_ALIGN_CENTER)
                         .addContent(smallText(formatter.format(lastHourStart.plusHours(1))))
                         .build()
@@ -563,6 +592,7 @@ class ElectricityPriceTile : TileService() {
 
         val axisOffset = Box.Builder().setWidth(dp(AXIS_LABEL_WIDTH_DP + AXIS_GAP_DP)).build()
         return Row.Builder()
+            .setWidth(expand())
             .addContent(axisOffset)
             .addContent(bars)
             .addContent(axisOffset)
