@@ -227,6 +227,9 @@
     <string name="electricity_price_tile_no_data">No upcoming price data was found on this entity</string>
     <string name="electricity_price_tile_forecast_entity">Price forecast entity</string>
     <string name="electricity_price_tile_current_price_entity">Current price entity (optional)</string>
+    <string name="remote_control_tile">Remote control</string>
+    <string name="remote_control_tile_desc">Remote control for the home theater</string>
+    <string name="remote_control_tile_log_in">Log in to add a remote control tile</string>
     <string name="empty_template">Template value must not be blank</string>
     <string name="enable_all_sensors_summary">All required permissions will be requested upon enabling</string>
     <string name="enable_all_sensors">Enable all sensors</string>
