@@ -134,8 +134,7 @@ class ElectricityPriceTile : TileService() {
         }
 
         /** @return the green/orange/red color for [price], in c/kWh (or the entity's own currency unit). */
-        fun colorForPrice(price: Double, time: ZonedDateTime, now: ZonedDateTime): Int = when {
-            time < now -> COLOR_PAST
+        fun colorForPrice(price: Double): Int = when {
             price <= PRICE_LOW_MAX -> COLOR_LOW
             price <= PRICE_MEDIUM_MAX -> COLOR_MEDIUM
             else -> COLOR_HIGH
@@ -160,7 +159,7 @@ class ElectricityPriceTile : TileService() {
          *   entry that covers [now]. Works regardless of the source's reporting interval (e.g. 15
          *   minutes or hourly).
          */
-        fun nextWindow(all: List<HourlyPrice>, now: ZonedDateTime = Instant.now().truncatedTo(ChronoUnit.HOURS).atZone(ZoneId.systemDefault()), windowHours: Long = WINDOW_HOURS): List<HourlyPrice> {
+        fun nextWindow(all: List<HourlyPrice>, now: ZonedDateTime = Instant.now().atZone(ZoneId.systemDefault()), windowHours: Long = WINDOW_HOURS): List<HourlyPrice> {
             if (all.isEmpty()) return emptyList()
             val startIndex = all.indexOfLast { it.time <= now }.let { if (it == -1) 0 else it }
             val windowEnd = all[startIndex].time.plus(Duration.ofHours(windowHours))
@@ -450,8 +449,7 @@ class ElectricityPriceTile : TileService() {
         private fun drawHeadline(canvas: Canvas, currentPrice: Double?, unit: String, chartTop: Float) {
             if (currentPrice == null) return
             val text = formatPrice(currentPrice) + if (unit.isNotBlank()) " $unit" else ""
-            val now = ZonedDateTime.now()
-            val paint = textPaint(HEADLINE_TEXT_SIZE_SP, bold = true).apply { color = colorForPrice(currentPrice, now, now) }
+            val paint = textPaint(HEADLINE_TEXT_SIZE_SP, bold = true).apply { color = colorForPrice(currentPrice) }
             val fm = paint.fontMetrics
             // Position the text so its descent line (visual bottom) sits HEADLINE_TO_CHART_GAP_DP above chartTop.
             val baseline = (chartTop - HEADLINE_TO_CHART_GAP_DP.dpToPx()) - fm.descent
@@ -500,12 +498,11 @@ class ElectricityPriceTile : TileService() {
             val minBarHeightPx = BAR_MIN_HEIGHT_DP.dpToPx()
             val paint = Paint(Paint.ANTI_ALIAS_FLAG)
             val interval = if (prices.size >= 2) Duration.between(prices[0].time, prices[1].time) else Duration.ZERO
-            val now = Instant.now().atZone(ZoneId.systemDefault()).minus(interval)
             prices.forEachIndexed { index, entry ->
                 val left = barLeft(barsAreaLeft, barWidthPx, spacingPx, index)
                 val ratio = (entry.price / axisMax).coerceIn(0.0, 1.0)
                 val barHeightPx = minBarHeightPx + ratio.toFloat() * (barAreaHeightPx - minBarHeightPx)
-                paint.color = colorForPrice(entry.price, entry.time, now)
+                paint.color = colorForPrice(entry.price)
                 canvas.drawRect(left, chartBottom - barHeightPx, left + barWidthPx, chartBottom, paint)
             }
         }
@@ -571,16 +568,19 @@ class ElectricityPriceTile : TileService() {
 
             var barIndex = 0
             groups.forEachIndexed { groupIndex, (hourStart, entriesInHour) ->
-                if (groupIndex % LABEL_EVERY_N_HOURS == 0) {
+                if ((groupIndex % LABEL_EVERY_N_HOURS == 0) && (entriesInHour.size > 2)) {
                     val groupLeft = barLeft(barsAreaLeft, barWidthPx, spacingPx, barIndex)
                     canvas.drawText(formatter.format(hourStart), groupLeft, y, paint)
                 }
                 barIndex += entriesInHour.size
             }
             // Trailing label for the end of the trend's last bar.
-            groups.lastOrNull()?.let { (lastHourStart, _) ->
-                val lastBarRight = barLeft(barsAreaLeft, barWidthPx, spacingPx, prices.lastIndex) + barWidthPx
-                canvas.drawText(formatter.format(lastHourStart.plusHours(1)), lastBarRight + spacingPx, y, paint)
+            if (groups.size % LABEL_EVERY_N_HOURS == 0)
+            groups.lastOrNull()?.let { (lastHourStart, entriesInHour) ->
+                if (entriesInHour.size > 2) {
+                    val lastBarRight = barLeft(barsAreaLeft, barWidthPx, spacingPx, prices.lastIndex) + barWidthPx
+                    canvas.drawText(formatter.format(lastHourStart.plusHours(1)), lastBarRight + spacingPx, y, paint)
+                }
             }
         }
 
