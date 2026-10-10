@@ -27,6 +27,14 @@ import timber.log.Timber
 
 private const val COMPLICATION_ICON_SIZE_DP = 24
 
+private const val PRICE_LOW_MAX = 15.0 // below this: green
+private const val PRICE_MEDIUM_MAX = 20.0 // below this: orange, at/above: red
+
+private const val COLOR_LOW = 0xFF43A047.toInt() // green
+private const val COLOR_MEDIUM = 0xFFFB8C00.toInt() // orange
+private const val COLOR_HIGH = 0xFFE53935.toInt() // red
+
+
 @AndroidEntryPoint
 class EntityStateDataSourceService : SuspendingComplicationDataSourceService() {
 
@@ -38,6 +46,12 @@ class EntityStateDataSourceService : SuspendingComplicationDataSourceService() {
 
     @Inject
     lateinit var entitiesForDisplayManager: EntitiesForDisplayManager
+
+    fun colorForPrice(price: Float): Int = when {
+        price <= PRICE_LOW_MAX -> COLOR_LOW
+        price <= PRICE_MEDIUM_MAX -> COLOR_MEDIUM
+        else -> COLOR_HIGH
+    }
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData? {
         if (request.complicationType != ComplicationType.SHORT_TEXT &&
@@ -58,12 +72,7 @@ class EntityStateDataSourceService : SuspendingComplicationDataSourceService() {
             ?: return getErrorComplication(request, R.string.complication_entity_invalid)
 
         val number = displayEntity.rawState.toFloatOrNull() ?: 0f
-        val iconColor = when {
-            number > 20f -> Color.RED
-            number > 10f -> Color.YELLOW
-            else -> Color.GREEN
-        }
-        val iconBitmap = displayEntity.icon.toBitmap(this, COMPLICATION_ICON_SIZE_DP, iconColor)
+        val iconBitmap = displayEntity.icon.toBitmap(this, COMPLICATION_ICON_SIZE_DP, colorForPrice(number))
 
         val title = if (settings.showTitle) {
             PlainComplicationText.Builder(displayEntity.name).build()

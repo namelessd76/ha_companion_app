@@ -78,7 +78,6 @@ private const val PRICE_MEDIUM_MAX = 20.0 // below this: orange, at/above: red
 private const val COLOR_LOW = 0xFF43A047.toInt() // green
 private const val COLOR_MEDIUM = 0xFFFB8C00.toInt() // orange
 private const val COLOR_HIGH = 0xFFE53935.toInt() // red
-private const val COLOR_PAST = 0x80808080.toInt() // gray
 
 private const val WINDOW_HOURS = 12L
 private const val AXIS_STEP = 5.0 // c/kWh between value axis ticks
@@ -583,15 +582,13 @@ class ElectricityPriceTile : TileService() {
             // Trailing label for the end of the trend's last bar.
             if (groups.size % LABEL_EVERY_N_HOURS == 0) {
                 groups.lastOrNull()?.let { (lastHourStart, entriesInHour) ->
-                    if (entriesInHour.size > 2) {
-                        val lastBarRight = barLeft(barsAreaLeft, barWidthPx, spacingPx, prices.lastIndex) + barWidthPx
-                        canvas.drawText(
-                            formatter.format(lastHourStart.plusHours(1)),
-                            lastBarRight + spacingPx,
-                            y,
-                            paint,
-                        )
-                    }
+                    val lastBarRight = barLeft(barsAreaLeft, barWidthPx, spacingPx, prices.lastIndex) + barWidthPx
+                    canvas.drawText(
+                        formatter.format(lastHourStart.plusHours(1)),
+                        lastBarRight + spacingPx,
+                        y,
+                        paint,
+                    )
                 }
             }
         }
