@@ -22,6 +22,7 @@ import io.homeassistant.companion.android.home.views.DEEPLINK_PREFIX_SET_CAMERA_
 import io.homeassistant.companion.android.home.views.DEEPLINK_PREFIX_SET_SHORTCUT_TILE
 import io.homeassistant.companion.android.home.views.DEEPLINK_PREFIX_SET_TEMPLATE_TILE
 import io.homeassistant.companion.android.home.views.DEEPLINK_PREFIX_SET_THERMOSTAT_TILE
+import io.homeassistant.companion.android.home.views.DEEPLINK_SET_ELECTRICITY_PRICE_TILE
 import io.homeassistant.companion.android.home.views.LoadHomePage
 import io.homeassistant.companion.android.onboarding.OnboardingActivity
 import io.homeassistant.companion.android.sensors.SensorReceiver
@@ -114,6 +115,13 @@ class HomeActivity :
         fun getTemplateTileSettingsIntent(context: Context, tileId: Int) = Intent(
             Intent.ACTION_VIEW,
             "$DEEPLINK_PREFIX_SET_TEMPLATE_TILE/$tileId".toUri(),
+            context,
+            HomeActivity::class.java,
+        )
+
+        fun getElectricityPriceTileSettingsIntent(context: Context) = Intent(
+            Intent.ACTION_VIEW,
+            DEEPLINK_SET_ELECTRICITY_PRICE_TILE.toUri(),
             context,
             HomeActivity::class.java,
         )

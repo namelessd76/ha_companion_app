@@ -1,5 +1,6 @@
 package io.homeassistant.companion.android.common.data.prefs
 
+import io.homeassistant.companion.android.common.data.prefs.impl.entities.ElectricityPriceTileConfig
 import io.homeassistant.companion.android.common.data.prefs.impl.entities.TemplateTileConfig
 
 interface WearPrefsRepository {
@@ -20,4 +21,6 @@ interface WearPrefsRepository {
     suspend fun setWearToastConfirmation(enabled: Boolean)
     suspend fun getWearFavoritesOnly(): Boolean
     suspend fun setWearFavoritesOnly(enabled: Boolean)
+    suspend fun getElectricityPriceTileConfig(): ElectricityPriceTileConfig
+    suspend fun setElectricityPriceTileConfig(config: ElectricityPriceTileConfig)
 }

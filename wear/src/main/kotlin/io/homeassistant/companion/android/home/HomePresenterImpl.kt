@@ -9,6 +9,7 @@ import io.homeassistant.companion.android.common.data.integration.IntegrationDom
 import io.homeassistant.companion.android.common.data.integration.IntegrationDomains.FAN_DOMAIN
 import io.homeassistant.companion.android.common.data.integration.IntegrationDomains.LIGHT_DOMAIN
 import io.homeassistant.companion.android.common.data.prefs.WearPrefsRepository
+import io.homeassistant.companion.android.common.data.prefs.impl.entities.ElectricityPriceTileConfig
 import io.homeassistant.companion.android.common.data.prefs.impl.entities.TemplateTileConfig
 import io.homeassistant.companion.android.common.data.servers.ServerManager
 import io.homeassistant.companion.android.common.data.websocket.WebSocketState
@@ -320,5 +321,13 @@ class HomePresenterImpl @Inject constructor(
 
     override suspend fun setWearFavoritesOnly(enabled: Boolean) {
         wearPrefsRepository.setWearFavoritesOnly(enabled)
+    }
+
+    override suspend fun getElectricityPriceTileConfig(): ElectricityPriceTileConfig {
+        return wearPrefsRepository.getElectricityPriceTileConfig()
+    }
+
+    override suspend fun setElectricityPriceTileConfig(config: ElectricityPriceTileConfig) {
+        wearPrefsRepository.setElectricityPriceTileConfig(config)
     }
 }

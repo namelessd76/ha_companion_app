@@ -117,6 +117,11 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="com.google.android.clockwork.tiles.category.PROVIDER_CONFIG" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="ConfigElectricityPriceTile" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="com.google.android.clockwork.tiles.category.PROVIDER_CONFIG" />
+            </intent-filter>
         </activity>
 
         <!-- To show confirmations and failures -->
@@ -244,6 +249,23 @@
                 android:name="com.google.android.clockwork.tiles.PROVIDER_CONFIG_ACTION"
                 android:value="ConfigThermostatTile" />
         </service>
+        <service
+            android:name=".tiles.ElectricityPriceTile"
+            android:label="@string/electricity_price_tile"
+            android:description="@string/electricity_price_tile_desc"
+            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
+            </intent-filter>
+
+            <meta-data android:name="androidx.wear.tiles.PREVIEW"
+                android:resource="@drawable/electricity_price_tile_example" />
+
+            <meta-data
+                android:name="com.google.android.clockwork.tiles.PROVIDER_CONFIG_ACTION"
+                android:value="ConfigElectricityPriceTile" />
+        </service>
         <receiver android:name=".tiles.TileActionReceiver"
             android:exported="false">
             <intent-filter>
@@ -252,6 +274,19 @@
         </receiver>
 
         <!-- Complications -->
+        <service
+            android:name=".tiles.RemoteControlTile"
+            android:label="@string/remote_control_tile"
+            android:description="@string/remote_control_tile_desc"
+            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
+            </intent-filter>
+
+            <meta-data android:name="androidx.wear.tiles.PREVIEW"
+                android:resource="@drawable/remote_control_tile_example" />
+        </service>
         <service android:name=".complications.EntityStateDataSourceService"
             android:exported="true"
             android:icon="@drawable/ic_lightbulb"
@@ -263,7 +298,7 @@
 
             <meta-data
                 android:name="android.support.wearable.complications.SUPPORTED_TYPES"
-                android:value="SHORT_TEXT,LONG_TEXT" />
+                android:value="SHORT_TEXT,LONG_TEXT,RANGED_VALUE" />
             <meta-data
                 android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
                 android:value="900" />

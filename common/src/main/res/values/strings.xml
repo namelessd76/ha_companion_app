@@ -239,6 +239,16 @@
     <string name="downloads_unnamed_file">Unnamed file</string>
     <string name="downloads_complete">Download complete.</string>
     <string name="downloads_failed">Download failed.</string>
+    <string name="electricity_price_tile">Electricity price tile</string>
+    <string name="electricity_price_tile_desc">Shows the electricity price trend for the next 12 hours</string>
+    <string name="electricity_price_tile_log_in">Log in to add an electricity price tile</string>
+    <string name="electricity_price_tile_no_entity_yet">Edit the tile settings and select an entity with hourly price data</string>
+    <string name="electricity_price_tile_no_data">No upcoming price data was found on this entity</string>
+    <string name="electricity_price_tile_forecast_entity">Price forecast entity</string>
+    <string name="electricity_price_tile_current_price_entity">Current price entity (optional)</string>
+    <string name="remote_control_tile">Remote control</string>
+    <string name="remote_control_tile_desc">Remote control for the home theater</string>
+    <string name="remote_control_tile_log_in">Log in to add a remote control tile</string>
     <string name="empty_template">Template value must not be blank</string>
     <string name="enable_sensor">Enable sensor</string>
     <string name="enable_sensor_missing_permission_activity_recognition">Requires \'Physical activity\' permission</string>

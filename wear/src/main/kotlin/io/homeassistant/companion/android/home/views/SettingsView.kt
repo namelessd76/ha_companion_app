@@ -21,6 +21,7 @@ import io.github.timoptr.mdiicons.generated.BellRing
 import io.github.timoptr.mdiicons.generated.CommentProcessingOutline
 import io.github.timoptr.mdiicons.generated.Delete
 import io.github.timoptr.mdiicons.generated.ExitRun
+import io.github.timoptr.mdiicons.generated.Flash
 import io.github.timoptr.mdiicons.generated.HomeHeart
 import io.github.timoptr.mdiicons.generated.Leak
 import io.github.timoptr.mdiicons.generated.Message
@@ -91,6 +92,7 @@ fun SettingsView(
     onClickCameraTile: () -> Unit,
     onClickTemplateTiles: () -> Unit,
     onClickThermostatTiles: () -> Unit,
+    onClickElectricityPriceTile: () -> Unit,
     onAssistantAppAllowed: (Boolean) -> Unit,
     onClickNotifications: () -> Unit,
 ) {
@@ -209,6 +211,13 @@ fun SettingsView(
                 )
             }
             item {
+                SecondarySettingsChip(
+                    icon = Mdi.Flash,
+                    label = stringResource(commonR.string.electricity_price_tile),
+                    onClick = onClickElectricityPriceTile,
+                )
+            }
+            item {
                 ListHeader(
                     id = commonR.string.sensors,
                 )
@@ -306,6 +315,7 @@ private fun PreviewSettingsView() {
         onClickCameraTile = {},
         onClickTemplateTiles = {},
         onClickThermostatTiles = {},
+        onClickElectricityPriceTile = {},
         onAssistantAppAllowed = {},
         onClickNotifications = {},
     )

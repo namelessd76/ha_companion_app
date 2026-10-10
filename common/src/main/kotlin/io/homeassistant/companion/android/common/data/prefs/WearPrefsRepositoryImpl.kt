@@ -5,6 +5,7 @@ import io.homeassistant.companion.android.common.data.LocalStorage
 import io.homeassistant.companion.android.common.data.prefs.WearPrefsRepositoryImpl.Companion.MIGRATION_PREF
 import io.homeassistant.companion.android.common.data.prefs.WearPrefsRepositoryImpl.Companion.MIGRATION_VERSION
 import io.homeassistant.companion.android.common.data.prefs.WearPrefsRepositoryImpl.Companion.PREF_TILE_TEMPLATES
+import io.homeassistant.companion.android.common.data.prefs.impl.entities.ElectricityPriceTileConfig
 import io.homeassistant.companion.android.common.data.prefs.impl.entities.TemplateTileConfig
 import io.homeassistant.companion.android.common.util.jsonArrayOrNull
 import io.homeassistant.companion.android.common.util.kotlinJsonMapper
@@ -23,6 +24,7 @@ private const val PREF_SHOW_TILE_SHORTCUTS_TEXT = "show_tile_shortcuts_text"
 private const val PREF_WEAR_HAPTIC_FEEDBACK = "wear_haptic_feedback"
 private const val PREF_WEAR_TOAST_CONFIRMATION = "wear_toast_confirmation"
 private const val PREF_WEAR_FAVORITES_ONLY = "wear_favorites_only"
+private const val PREF_ELECTRICITY_PRICE_TILE = "electricity_price_tile"
 
 private const val UNKNOWN_TEMPLATE_TILE_ID = -1
 
@@ -257,5 +259,15 @@ internal class WearPrefsRepositoryImpl @Inject constructor(
 
     override suspend fun setWearFavoritesOnly(enabled: Boolean) {
         localStorage().putBoolean(PREF_WEAR_FAVORITES_ONLY, enabled)
+    }
+
+    override suspend fun getElectricityPriceTileConfig(): ElectricityPriceTileConfig {
+        return localStorage().getString(PREF_ELECTRICITY_PRICE_TILE)?.let {
+            runCatching { kotlinJsonMapper.decodeFromString<ElectricityPriceTileConfig>(it) }.getOrNull()
+        } ?: ElectricityPriceTileConfig()
+    }
+
+    override suspend fun setElectricityPriceTileConfig(config: ElectricityPriceTileConfig) {
+        localStorage().putString(PREF_ELECTRICITY_PRICE_TILE, kotlinJsonMapper.encodeToString(config))
     }
 }

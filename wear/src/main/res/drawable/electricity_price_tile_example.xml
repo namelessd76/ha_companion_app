@@ -1,0 +1,23 @@
+<vector android:height="192dp" android:width="192dp"
+    android:viewportHeight="192" android:viewportWidth="192"
+    xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Background -->
+    <path android:fillColor="#212121"
+        android:pathData="M0,0 h192 v192 h-192 z"/>
+    <!-- Current price headline (stand-in bar) -->
+    <path android:fillColor="#43A047"
+        android:pathData="M66,58 h60 v14 h-60 z"/>
+    <!-- Bars: 12 hours, green/orange/red by price bracket -->
+    <path android:fillColor="#43A047" android:pathData="M14,150 h10 v20 h-10 z"/>
+    <path android:fillColor="#43A047" android:pathData="M28,145 h10 v25 h-10 z"/>
+    <path android:fillColor="#43A047" android:pathData="M42,148 h10 v22 h-10 z"/>
+    <path android:fillColor="#43A047" android:pathData="M56,140 h10 v30 h-10 z"/>
+    <path android:fillColor="#FB8C00" android:pathData="M70,130 h10 v40 h-10 z"/>
+    <path android:fillColor="#FB8C00" android:pathData="M84,115 h10 v55 h-10 z"/>
+    <path android:fillColor="#E53935" android:pathData="M98,105 h10 v65 h-10 z"/>
+    <path android:fillColor="#E53935" android:pathData="M112,100 h10 v70 h-10 z"/>
+    <path android:fillColor="#E53935" android:pathData="M126,110 h10 v60 h-10 z"/>
+    <path android:fillColor="#FB8C00" android:pathData="M140,125 h10 v45 h-10 z"/>
+    <path android:fillColor="#43A047" android:pathData="M154,138 h10 v32 h-10 z"/>
+    <path android:fillColor="#43A047" android:pathData="M168,146 h10 v24 h-10 z"/>
+</vector>

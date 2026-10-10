@@ -8,6 +8,7 @@ import androidx.wear.watchface.complications.data.ComplicationType
 import androidx.wear.watchface.complications.data.LongTextComplicationData
 import androidx.wear.watchface.complications.data.MonochromaticImage
 import androidx.wear.watchface.complications.data.PlainComplicationText
+import androidx.wear.watchface.complications.data.RangedValueComplicationData
 import androidx.wear.watchface.complications.data.ShortTextComplicationData
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
@@ -19,7 +20,11 @@ import io.homeassistant.companion.android.common.data.integration.display.awaitL
 import io.homeassistant.companion.android.common.data.servers.ServerManager
 import io.homeassistant.companion.android.database.wear.EntityStateComplicationsDao
 import javax.inject.Inject
+import kotlin.math.ceil
+import kotlin.math.floor
+import kotlin.math.max
 import timber.log.Timber
+
 private const val COMPLICATION_ICON_SIZE_DP = 24
 
 @AndroidEntryPoint
@@ -36,7 +41,8 @@ class EntityStateDataSourceService : SuspendingComplicationDataSourceService() {
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData? {
         if (request.complicationType != ComplicationType.SHORT_TEXT &&
-            request.complicationType != ComplicationType.LONG_TEXT
+            request.complicationType != ComplicationType.LONG_TEXT &&
+            request.complicationType != ComplicationType.RANGED_VALUE
         ) {
             return null
         }
@@ -51,7 +57,13 @@ class EntityStateDataSourceService : SuspendingComplicationDataSourceService() {
         val displayEntity = loadedState.entity(entityId)
             ?: return getErrorComplication(request, R.string.complication_entity_invalid)
 
-        val iconBitmap = displayEntity.icon.toBitmap(this, COMPLICATION_ICON_SIZE_DP, Color.WHITE)
+        val number = displayEntity.rawState.toFloatOrNull() ?: 0f
+        val iconColor = when {
+            number > 20f -> Color.RED
+            number > 10f -> Color.YELLOW
+            else -> Color.GREEN
+        }
+        val iconBitmap = displayEntity.icon.toBitmap(this, COMPLICATION_ICON_SIZE_DP, iconColor)
 
         val title = if (settings.showTitle) {
             PlainComplicationText.Builder(displayEntity.name).build()
@@ -91,7 +103,23 @@ class EntityStateDataSourceService : SuspendingComplicationDataSourceService() {
                     .setMonochromaticImage(monochromaticImage)
                     .build()
             }
-
+            ComplicationType.RANGED_VALUE -> {
+                // The range comes from the entity attributes, which are not part of the display entity
+                val attributes = serverManager.integrationRepository().getEntity(entityId)?.attributes.orEmpty()
+                val minValue = floor((attributes["min"] as? Number)?.toFloat() ?: 0f)
+                val maxValue = max(30f, ceil((attributes["max"] as? Number)?.toFloat() ?: 30f))
+                RangedValueComplicationData.Builder(
+                    value = number.coerceIn(minValue, maxValue),
+                    min = minValue,
+                    max = maxValue,
+                    contentDescription = contentDescription,
+                )
+                    .setTitle(title)
+                    .setText(text)
+                    .setTapAction(tapAction)
+                    .setMonochromaticImage(monochromaticImage)
+                    .build()
+            }
             else -> null // Already handled at the start of the function
         }
     }
@@ -128,7 +156,18 @@ class EntityStateDataSourceService : SuspendingComplicationDataSourceService() {
                     .setMonochromaticImage(monochromaticImage)
                     .build()
             }
-
+            ComplicationType.RANGED_VALUE -> {
+                RangedValueComplicationData.Builder(
+                    value = 4.28f,
+                    min = 0f,
+                    max = 30f,
+                    contentDescription = contentDescription,
+                )
+                    .setTitle(title)
+                    .setText(PlainComplicationText.Builder("4.28").build())
+                    .setMonochromaticImage(monochromaticImage)
+                    .build()
+            }
             else -> {
                 Timber.w("Preview for unsupported complication type $type requested")
                 null

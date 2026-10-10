@@ -18,6 +18,7 @@ import io.homeassistant.companion.android.common.data.integration.display.Entiti
 import io.homeassistant.companion.android.common.data.integration.display.EntityDisplay
 import io.homeassistant.companion.android.common.data.integration.display.EntityDisplayState
 import io.homeassistant.companion.android.common.data.integration.display.EntityDisplayWithContext
+import io.homeassistant.companion.android.common.data.prefs.impl.entities.ElectricityPriceTileConfig
 import io.homeassistant.companion.android.common.data.prefs.impl.entities.TemplateTileConfig
 import io.homeassistant.companion.android.common.data.servers.ServerManager
 import io.homeassistant.companion.android.common.data.websocket.WebSocketState
@@ -40,6 +41,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterIsInstance
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -97,6 +100,7 @@ class MainViewModel @Inject constructor(
         val displayItems: Map<String, EntityDisplayWithContext> = emptyMap(),
         val cameraItems: List<EntityDisplay> = emptyList(),
         val climateItems: List<EntityDisplay> = emptyList(),
+        val sensorItems: List<EntityDisplay> = emptyList(),
         val favoriteCaches: List<FavoriteCaches> = emptyList(),
         val isFavoritesOnly: Boolean = false,
         val isHapticEnabled: Boolean = false,
@@ -105,6 +109,7 @@ class MainViewModel @Inject constructor(
         val isAssistantAppAllowed: Boolean = true,
         val areNotificationsAllowed: Boolean = false,
         val templateTiles: Map<Int, TemplateTileConfig> = emptyMap(),
+        val electricityPriceTileConfig: ElectricityPriceTileConfig = ElectricityPriceTileConfig(),
         val shortcutEntitiesMap: Map<Int?, List<SimplifiedEntity>> = emptyMap(),
         val loadingState: LoadingState = LoadingState.LOADING,
         val entitiesByArea: Map<String, List<String>> = emptyMap(),
@@ -211,6 +216,7 @@ class MainViewModel @Inject constructor(
                     isToastEnabled = homePresenter.getWearToastConfirmation(),
                     isShowShortcutTextEnabled = homePresenter.getShowShortcutText(),
                     isFavoritesOnly = homePresenter.getWearFavoritesOnly(),
+                    electricityPriceTileConfig = homePresenter.getElectricityPriceTileConfig(),
                     isAssistantAppAllowed = app.packageManager.getComponentEnabledSetting(assistantAppComponent) !=
                         PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
                     areNotificationsAllowed = NotificationManagerCompat.from(app).areNotificationsEnabled(),
@@ -526,6 +532,39 @@ class MainViewModel @Inject constructor(
         val updated = current?.copy(showEntityName = showName) ?: ThermostatTile(id = tileId, showEntityName = showName)
         thermostatTileDao.add(updated)
     }
+
+    /**
+     * Loads the sensor entities once, for picking the Electricity price tile entities. Sensors are not
+     * part of the observed [supportedDomains] as their states change too often for the main screen.
+     */
+    fun loadSensorEntities() {
+        viewModelScope.launch {
+            val loaded = entitiesForDisplayManager
+                .observeInContext(ServerManager.SERVER_ID_ACTIVE) { it.domain == "sensor" }
+                .filterIsInstance<EntityDisplayState.Loaded<EntityDisplayWithContext>>()
+                .firstOrNull()
+            updateUiState { it.copy(sensorItems = loaded?.entities?.toList().orEmpty()) }
+        }
+    }
+
+    private fun updateElectricityPriceTileConfig(
+        transform: (ElectricityPriceTileConfig) -> ElectricityPriceTileConfig,
+    ) {
+        viewModelScope.launch {
+            val updated = transform(mainViewUiState.value.electricityPriceTileConfig)
+            homePresenter.setElectricityPriceTileConfig(updated)
+            updateUiState { it.copy(electricityPriceTileConfig = updated) }
+        }
+    }
+
+    fun setElectricityPriceTileEntity(entityId: String) =
+        updateElectricityPriceTileConfig { it.copy(entityId = entityId) }
+
+    fun setElectricityPriceTileCurrentPriceEntity(entityId: String) =
+        updateElectricityPriceTileConfig { it.copy(currentPriceEntityId = entityId) }
+
+    fun setElectricityPriceTileRefreshInterval(interval: Int) =
+        updateElectricityPriceTileConfig { it.copy(refreshInterval = interval) }
 
     fun setTileShortcut(tileId: Int?, index: Int, entity: SimplifiedEntity) {
         viewModelScope.launch {
