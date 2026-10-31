@@ -572,23 +572,28 @@ class ElectricityPriceTile : TileService() {
                 .toList()
 
             var barIndex = 0
+            var grpIndex = 0
             groups.forEachIndexed { groupIndex, (hourStart, entriesInHour) ->
-                if ((groupIndex % LABEL_EVERY_N_HOURS == 0) && (entriesInHour.size > 2)) {
+                if ((groupIndex == 0) && (entriesInHour.size != 4)) {
+                    grpIndex = 1;
+                } else if ((groupIndex + grpIndex) % LABEL_EVERY_N_HOURS == 0) {
                     val groupLeft = barLeft(barsAreaLeft, barWidthPx, spacingPx, barIndex)
                     canvas.drawText(formatter.format(hourStart), groupLeft, y, paint)
                 }
                 barIndex += entriesInHour.size
             }
             // Trailing label for the end of the trend's last bar.
-            if (groups.size % LABEL_EVERY_N_HOURS == 0) {
+            if ((groups.size + grpIndex) % LABEL_EVERY_N_HOURS == 0) {
                 groups.lastOrNull()?.let { (lastHourStart, entriesInHour) ->
-                    val lastBarRight = barLeft(barsAreaLeft, barWidthPx, spacingPx, prices.lastIndex) + barWidthPx
-                    canvas.drawText(
-                        formatter.format(lastHourStart.plusHours(1)),
-                        lastBarRight + spacingPx,
-                        y,
-                        paint,
-                    )
+                    if (entriesInHour.size == 4) {
+                        val lastBarRight = barLeft(barsAreaLeft, barWidthPx, spacingPx, prices.lastIndex) + barWidthPx
+                        canvas.drawText(
+                            formatter.format(lastHourStart.plusHours(1)),
+                            lastBarRight + spacingPx,
+                            y,
+                            paint,
+                        )
+                    }
                 }
             }
         }
