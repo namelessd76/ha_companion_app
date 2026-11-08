@@ -126,6 +126,11 @@
 
         <!-- To show confirmations and failures -->
         <activity android:name="androidx.wear.activity.ConfirmationActivity" />
+        <activity
+            android:name=".tiles.ElectricityPriceActivity"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:exported="false" />
 
         <activity
             android:name=".conversation.ConversationActivity"

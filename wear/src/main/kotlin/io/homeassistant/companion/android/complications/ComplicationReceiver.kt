@@ -11,6 +11,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import io.homeassistant.companion.android.common.data.servers.ServerManager
 import io.homeassistant.companion.android.common.util.launchAsync
 import io.homeassistant.companion.android.conversation.ConversationActivity
+import io.homeassistant.companion.android.tiles.ElectricityPriceActivity
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -86,6 +87,16 @@ class ComplicationReceiver : BroadcastReceiver() {
                     putExtra(EXTRA_CONFIG_COMPLICATION_ID, complicationInstanceId)
                 },
                 PendingIntent.FLAG_IMMUTABLE,
+            )
+        }
+
+        /** Returns a pending intent, suitable for use as a tap intent, that opens the electricity price chart. */
+        fun getElectricityPriceIntent(context: Context, complicationInstanceId: Int): PendingIntent {
+            return PendingIntent.getActivity(
+                context,
+                complicationInstanceId,
+                ElectricityPriceActivity.newInstance(context),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
         }
 

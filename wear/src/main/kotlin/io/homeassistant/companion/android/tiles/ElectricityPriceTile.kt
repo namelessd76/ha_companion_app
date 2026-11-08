@@ -200,6 +200,40 @@ class ElectricityPriceTile : TileService() {
             is String -> value.toDoubleOrNull()
             else -> null
         }
+
+        /**
+         * Fetches the forecast (and current price) entities from [config] and draws the price chart
+         * for a screen described by [geometry]. Shared by the tile and [ElectricityPriceActivity].
+         */
+        suspend fun buildChartBitmap(
+            context: Context,
+            serverManager: ServerManager,
+            config: ElectricityPriceTileConfig,
+            geometry: ChartGeometry,
+        ): Bitmap {
+            val forecastEntity = getEntityOrNull(serverManager, config.entityId)
+            val allPrices = forecastEntity?.let { extractHourlyPrices(it.attributes) }.orEmpty()
+            val upcoming = nextWindow(allPrices)
+
+            val currentPriceEntity = getEntityOrNull(serverManager, config.currentPriceEntityId)
+            val currentPrice = currentPriceEntity?.state?.toDoubleOrNull() ?: upcoming.firstOrNull()?.price
+
+            val unit = (currentPriceEntity?.attributes?.get("unit_of_measurement") as? String)
+                ?: (forecastEntity?.attributes?.get("unit_of_measurement") as? String)
+                ?: ""
+
+            return ElectricityPriceChartPainter(context, geometry).paint(upcoming, currentPrice, unit)
+        }
+
+        private suspend fun getEntityOrNull(serverManager: ServerManager, entityId: String): Entity? {
+            if (entityId.isBlank()) return null
+            return try {
+                serverManager.integrationRepository().getEntity(entityId)
+            } catch (e: Exception) {
+                Timber.e(e, "Unable to get entity $entityId")
+                null
+            }
+        }
     }
 
     private val serviceJob = Job()
@@ -259,7 +293,12 @@ class ElectricityPriceTile : TileService() {
 
             val config = wearPrefsRepository.getElectricityPriceTileConfig()
             if (serverManager.isRegistered() && config.entityId.isNotBlank()) {
-                val bitmap = buildChartBitmap(config, requestParams.deviceConfiguration)
+                val bitmap = buildChartBitmap(
+                    this@ElectricityPriceTile,
+                    serverManager,
+                    config,
+                    ChartGeometry.from(requestParams.deviceConfiguration),
+                )
                 val bytes = ByteArrayOutputStream().use { stream ->
                     bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
                     stream.toByteArray()
@@ -328,277 +367,273 @@ class ElectricityPriceTile : TileService() {
         .addContent(getRefreshButton())
         .setModifiers(getRefreshModifiers())
         .build()
+}
 
-    private suspend fun buildChartBitmap(config: ElectricityPriceTileConfig, device: DeviceParameters): Bitmap {
-        val forecastEntity = getEntityOrNull(config.entityId)
-        val allPrices = forecastEntity?.let { extractHourlyPrices(it.attributes) }.orEmpty()
-        val upcoming = nextWindow(allPrices)
+/** Screen geometry the price chart is drawn for, in real pixels. */
+data class ChartGeometry(
+    val widthPx: Int,
+    val heightPx: Int,
+    val density: Float,
+    val fontScale: Float,
+    val isRound: Boolean,
+) {
+    companion object {
+        fun from(device: DeviceParameters): ChartGeometry = ChartGeometry(
+            widthPx = (device.screenWidthDp * device.screenDensity).roundToInt(),
+            heightPx = (device.screenHeightDp * device.screenDensity).roundToInt(),
+            density = device.screenDensity,
+            fontScale = device.fontScale,
+            isRound = device.screenShape == SCREEN_SHAPE_ROUND,
+        )
+    }
+}
 
-        val currentPriceEntity = getEntityOrNull(config.currentPriceEntityId)
-        val currentPrice = currentPriceEntity?.state?.toDoubleOrNull() ?: upcoming.firstOrNull()?.price
+private fun formatPrice(price: Double): String = String.format(Locale.getDefault(), "%.2f", price)
 
-        val unit = (currentPriceEntity?.attributes?.get("unit_of_measurement") as? String)
-            ?: (forecastEntity?.attributes?.get("unit_of_measurement") as? String)
-            ?: ""
+/**
+ * Draws the price trend chart onto a bitmap sized to the actual screen, in real pixels,
+ * so every measurement (text width, available margin, round-screen clipping) uses the device's
+ * real geometry rather than an estimate.
+ */
+private class ElectricityPriceChartPainter(private val context: Context, geometry: ChartGeometry) {
+    private val density = geometry.density
+    private val fontScale = geometry.fontScale.takeIf { it > 0f } ?: 1f
+    private val widthPx = geometry.widthPx
+    private val heightPx = geometry.heightPx
+    private val isRound = geometry.isRound
+    private val radiusPx = min(widthPx, heightPx) / 2f
+    private val centerXPx = widthPx / 2f
+    private val centerYPx = heightPx / 2f
 
-        return ChartPainter(this, device).paint(upcoming, currentPrice, unit)
+    private fun Float.dpToPx() = this * density
+    private fun Float.spToPx() = this * density * fontScale
+
+    private fun textPaint(sizeSp: Float, bold: Boolean = false): Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = TEXT_COLOR
+        textSize = sizeSp.spToPx()
+        isFakeBoldText = bold
+        textAlign = Paint.Align.CENTER
     }
 
-    private suspend fun getEntityOrNull(entityId: String): Entity? {
-        if (entityId.isBlank()) return null
-        return try {
-            serverManager.integrationRepository().getEntity(entityId)
-        } catch (e: Exception) {
-            Timber.e(e, "Unable to get entity $entityId")
-            null
-        }
+    private fun linePaint(color: Int, thicknessDp: Float): Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        this.color = color
+        strokeWidth = thicknessDp.dpToPx()
     }
 
-    private fun formatPrice(price: Double): String = String.format(Locale.getDefault(), "%.2f", price)
+    private fun Canvas.drawCenteredText(text: String, paint: Paint, cx: Float, cy: Float) {
+        val fm = paint.fontMetrics
+        drawText(text, cx, cy - (fm.descent + fm.ascent) / 2f, paint)
+    }
 
-    /**
-     * Draws the price trend chart onto a bitmap sized to the tile's actual screen, in real pixels,
-     * so every measurement (text width, available margin, round-screen clipping) uses the device's
-     * real geometry rather than an estimate.
-     */
-    private inner class ChartPainter(private val context: ElectricityPriceTile, device: DeviceParameters) {
-        private val density = device.screenDensity
-        private val fontScale = device.fontScale.takeIf { it > 0f } ?: 1f
-        private val widthPx = (device.screenWidthDp * density).roundToInt()
-        private val heightPx = (device.screenHeightDp * density).roundToInt()
-        private val isRound = device.screenShape == SCREEN_SHAPE_ROUND
-        private val radiusPx = min(widthPx, heightPx) / 2f
-        private val centerXPx = widthPx / 2f
-        private val centerYPx = heightPx / 2f
+    /** @return the half-width (px) of the screen available at vertical distance [dy] from center. */
+    private fun safeHalfWidthAt(dy: Float): Float =
+        if (isRound) sqrt(max(radiusPx * radiusPx - dy * dy, 0f)) else widthPx / 2f
 
-        private fun Float.dpToPx() = this * density
-        private fun Float.spToPx() = this * density * fontScale
+    fun paint(prices: List<HourlyPrice>, currentPrice: Double?, unit: String): Bitmap {
+        val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
 
-        private fun textPaint(sizeSp: Float, bold: Boolean = false): Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = TEXT_COLOR
-            textSize = sizeSp.spToPx()
-            isFakeBoldText = bold
-            textAlign = Paint.Align.CENTER
-        }
+        val barAreaHeightPx = BAR_AREA_HEIGHT_DP.dpToPx()
+        val chartTop = centerYPx - barAreaHeightPx / 2f
+        val chartBottom = centerYPx + barAreaHeightPx / 2f
 
-        private fun linePaint(color: Int, thicknessDp: Float): Paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            this.color = color
-            strokeWidth = thicknessDp.dpToPx()
-        }
-
-        private fun Canvas.drawCenteredText(text: String, paint: Paint, cx: Float, cy: Float) {
-            val fm = paint.fontMetrics
-            drawText(text, cx, cy - (fm.descent + fm.ascent) / 2f, paint)
-        }
-
-        /** @return the half-width (px) of the screen available at vertical distance [dy] from center. */
-        private fun safeHalfWidthAt(dy: Float): Float =
-            if (isRound) sqrt(max(radiusPx * radiusPx - dy * dy, 0f)) else widthPx / 2f
-
-        fun paint(prices: List<HourlyPrice>, currentPrice: Double?, unit: String): Bitmap {
-            val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bitmap)
-
-            val barAreaHeightPx = BAR_AREA_HEIGHT_DP.dpToPx()
-            val chartTop = centerYPx - barAreaHeightPx / 2f
-            val chartBottom = centerYPx + barAreaHeightPx / 2f
-
-            if (prices.isEmpty()) {
-                canvas.drawCenteredText(
-                    context.getString(commonR.string.electricity_price_tile_no_data),
-                    textPaint(HOUR_LABEL_TEXT_SIZE_SP),
-                    centerXPx,
-                    centerYPx,
-                )
-                return bitmap
-            }
-
-            val (axisMax, axisStep) = axisMaxFor(prices)
-            val axisPaint = textPaint(AXIS_TEXT_SIZE_SP)
-            val ticks = (axisMax downTo 0 step axisStep.toInt()).toList()
-            val axisLabelWidthPx = ticks.maxOf { axisPaint.measureText(it.toString()) }
-
-            // The round screen narrows away from the vertical center, so use the tightest available
-            // half-width across the chart's own vertical span (its top/bottom-most content) as the
-            // safe margin for everything - conservative, but guarantees nothing gets clipped.
-            val safeHalfWidthPx = min(safeHalfWidthAt(chartTop - centerYPx), safeHalfWidthAt(chartBottom - centerYPx))
-            val sideMarginPx = (widthPx / 2f - safeHalfWidthPx) + SIDE_PADDING_DP.dpToPx()
-
-            val barsAreaLeft = sideMarginPx + axisLabelWidthPx + AXIS_GAP_DP.dpToPx()
-            val barsAreaRight = widthPx - sideMarginPx - axisLabelWidthPx - AXIS_GAP_DP.dpToPx()
-            val barsAreaWidthPx = (barsAreaRight - barsAreaLeft).coerceAtLeast(0f)
-
-            val barCount = prices.size
-            val spacingUnits = (barCount + 1) * BAR_SPACING_RATIO
-            val barWidthPx = barsAreaWidthPx / (barCount + spacingUnits)
-            val spacingPx = barWidthPx * BAR_SPACING_RATIO
-
-            drawHeadline(canvas, currentPrice, unit, chartTop)
-            drawGridLines(canvas, ticks, axisMax, barsAreaLeft, barsAreaRight, chartTop, chartBottom)
-            drawAxisLabels(canvas, ticks, axisMax, axisPaint, sideMarginPx, axisLabelWidthPx, chartTop, chartBottom)
-            drawHourSeparators(canvas, prices, barsAreaLeft, barWidthPx, spacingPx, chartTop, chartBottom)
-            drawBars(canvas, prices, axisMax, barsAreaLeft, barWidthPx, spacingPx, chartBottom, barAreaHeightPx)
-            drawHourLabels(canvas, prices, barsAreaLeft, barWidthPx, spacingPx, chartBottom)
-
+        if (prices.isEmpty()) {
+            canvas.drawCenteredText(
+                context.getString(commonR.string.electricity_price_tile_no_data),
+                textPaint(HOUR_LABEL_TEXT_SIZE_SP),
+                centerXPx,
+                centerYPx,
+            )
             return bitmap
         }
 
-        private fun drawHeadline(canvas: Canvas, currentPrice: Double?, unit: String, chartTop: Float) {
-            if (currentPrice == null) return
-            val text = formatPrice(currentPrice) + if (unit.isNotBlank()) " $unit" else ""
-            val paint = textPaint(HEADLINE_TEXT_SIZE_SP, bold = true).apply { color = colorForPrice(currentPrice) }
-            val fm = paint.fontMetrics
-            // Position the text so its descent line (visual bottom) sits HEADLINE_TO_CHART_GAP_DP above chartTop.
-            val baseline = (chartTop - HEADLINE_TO_CHART_GAP_DP.dpToPx()) - fm.descent
-            canvas.drawText(text, centerXPx, baseline, paint)
-        }
+        val (axisMax, axisStep) = ElectricityPriceTile.axisMaxFor(prices)
+        val axisPaint = textPaint(AXIS_TEXT_SIZE_SP)
+        val ticks = (axisMax downTo 0 step axisStep.toInt()).toList()
+        val axisLabelWidthPx = ticks.maxOf { axisPaint.measureText(it.toString()) }
 
-        /** A dark gray horizontal line for every price tag on the value axis above 0, at its exact linear position. */
-        private fun drawGridLines(
-            canvas: Canvas,
-            ticks: List<Int>,
-            axisMax: Int,
-            left: Float,
-            right: Float,
-            chartTop: Float,
-            chartBottom: Float,
-        ) {
-            val paint = linePaint(GRID_LINE_COLOR, GRID_LINE_THICKNESS_DP)
-            ticks.filter { it != 0 }.forEach { tick ->
-                val y = chartBottom - (tick.toFloat() / axisMax) * (chartBottom - chartTop)
-                canvas.drawLine(left, y, right, y, paint)
-            }
-        }
+        // The round screen narrows away from the vertical center, so use the tightest available
+        // half-width across the chart's own vertical span (its top/bottom-most content) as the
+        // safe margin for everything - conservative, but guarantees nothing gets clipped.
+        val safeHalfWidthPx = min(safeHalfWidthAt(chartTop - centerYPx), safeHalfWidthAt(chartBottom - centerYPx))
+        val sideMarginPx = (widthPx / 2f - safeHalfWidthPx) + SIDE_PADDING_DP.dpToPx()
 
-        private fun drawAxisLabels(
-            canvas: Canvas,
-            ticks: List<Int>,
-            axisMax: Int,
-            paint: Paint,
-            sideMarginPx: Float,
-            axisLabelWidthPx: Float,
-            chartTop: Float,
-            chartBottom: Float,
-        ) {
-            val leftX = sideMarginPx + axisLabelWidthPx / 2f
-            val rightX = widthPx - sideMarginPx - axisLabelWidthPx / 2f
-            ticks.forEach { tick ->
-                val y = chartBottom - (tick.toFloat() / axisMax) * (chartBottom - chartTop)
-                canvas.drawCenteredText(tick.toString(), paint, leftX, y)
-                canvas.drawCenteredText(tick.toString(), paint, rightX, y)
-            }
-        }
+        val barsAreaLeft = sideMarginPx + axisLabelWidthPx + AXIS_GAP_DP.dpToPx()
+        val barsAreaRight = widthPx - sideMarginPx - axisLabelWidthPx - AXIS_GAP_DP.dpToPx()
+        val barsAreaWidthPx = (barsAreaRight - barsAreaLeft).coerceAtLeast(0f)
 
-        /** One bar per entry in [prices], scaled against the fixed 0..[axisMax] value axis. */
-        private fun drawBars(
-            canvas: Canvas,
-            prices: List<HourlyPrice>,
-            axisMax: Int,
-            barsAreaLeft: Float,
-            barWidthPx: Float,
-            spacingPx: Float,
-            chartBottom: Float,
-            barAreaHeightPx: Float,
-        ) {
-            val minBarHeightPx = BAR_MIN_HEIGHT_DP.dpToPx()
-            val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-            val interval = if (prices.size >= 2) Duration.between(prices[0].time, prices[1].time) else Duration.ZERO
-            prices.forEachIndexed { index, entry ->
-                val left = barLeft(barsAreaLeft, barWidthPx, spacingPx, index)
-                val ratio = (entry.price / axisMax).coerceIn(0.0, 1.0)
-                val barHeightPx = minBarHeightPx + ratio.toFloat() * (barAreaHeightPx - minBarHeightPx)
-                paint.color = colorForPrice(entry.price)
-                canvas.drawRect(left, chartBottom - barHeightPx, left + barWidthPx, chartBottom, paint)
-            }
-        }
+        val barCount = prices.size
+        val spacingUnits = (barCount + 1) * BAR_SPACING_RATIO
+        val barWidthPx = barsAreaWidthPx / (barCount + spacingUnits)
+        val spacingPx = barWidthPx * BAR_SPACING_RATIO
 
-        /**
-         * A dark gray vertical separator at the start of every hour (including the very first bar,
-         * if it lands exactly on the hour), plus one trailing separator after the very last bar if
-         * its interval reaches exactly into the next hour. Drawn in the gap between bars, not
-         * behind/under a bar, so it's never hidden.
-         */
-        private fun drawHourSeparators(
-            canvas: Canvas,
-            prices: List<HourlyPrice>,
-            barsAreaLeft: Float,
-            barWidthPx: Float,
-            spacingPx: Float,
-            chartTop: Float,
-            chartBottom: Float,
-        ) {
-            val interval = if (prices.size >= 2) Duration.between(prices[0].time, prices[1].time) else Duration.ZERO
-            fun isHourStart(time: ZonedDateTime) = time == time.truncatedTo(ChronoUnit.HOURS)
-            fun isHourEnd(time: ZonedDateTime) = interval > Duration.ZERO && isHourStart(time.plus(interval))
+        drawHeadline(canvas, currentPrice, unit, chartTop)
+        drawGridLines(canvas, ticks, axisMax, barsAreaLeft, barsAreaRight, chartTop, chartBottom)
+        drawAxisLabels(canvas, ticks, axisMax, axisPaint, sideMarginPx, axisLabelWidthPx, chartTop, chartBottom)
+        drawHourSeparators(canvas, prices, barsAreaLeft, barWidthPx, spacingPx, chartTop, chartBottom)
+        drawBars(canvas, prices, axisMax, barsAreaLeft, barWidthPx, spacingPx, chartBottom, barAreaHeightPx)
+        drawHourLabels(canvas, prices, barsAreaLeft, barWidthPx, spacingPx, chartBottom)
 
-            val paint = linePaint(HOUR_SEPARATOR_COLOR, HOUR_SEPARATOR_THICKNESS_DP)
-            fun drawAt(x: Float) = canvas.drawLine(x, chartTop, x, chartBottom, paint)
-
-            if (isHourStart(prices.first().time)) {
-                drawAt(barLeft(barsAreaLeft, barWidthPx, spacingPx, 0) - spacingPx / 2f)
-            }
-            prices.forEachIndexed { index, entry ->
-                val showSeparator = if (index < prices.lastIndex) {
-                    isHourStart(prices[index + 1].time)
-                } else {
-                    isHourEnd(entry.time)
-                }
-                if (showSeparator) {
-                    drawAt(barLeft(barsAreaLeft, barWidthPx, spacingPx, index) + barWidthPx + spacingPx / 2f)
-                }
-            }
-        }
-
-        /**
-         * Hour-only labels under the bars (minutes omitted), shown every [LABEL_EVERY_N_HOURS]
-         * hours, centered under the start of their hour, plus one extra trailing label marking the
-         * end of the very last bar (e.g. bars ending at 13:45 also get a "14" label).
-         */
-        private fun drawHourLabels(
-            canvas: Canvas,
-            prices: List<HourlyPrice>,
-            barsAreaLeft: Float,
-            barWidthPx: Float,
-            spacingPx: Float,
-            chartBottom: Float,
-        ) {
-            val formatter = DateTimeFormatter.ofPattern("HH")
-            val paint = textPaint(HOUR_LABEL_TEXT_SIZE_SP)
-            val fm = paint.fontMetrics
-            val y = chartBottom + CHART_TO_HOUR_LABELS_GAP_DP.dpToPx() - fm.ascent
-
-            val groups: List<Pair<ZonedDateTime, List<HourlyPrice>>> = prices
-                .groupBy { it.time.truncatedTo(ChronoUnit.HOURS) }
-                .toList()
-
-            var barIndex = 0
-            var grpIndex = 0
-            groups.forEachIndexed { groupIndex, (hourStart, entriesInHour) ->
-                if ((groupIndex == 0) && (entriesInHour.size != 4)) {
-                    grpIndex = 1;
-                } else if ((groupIndex + grpIndex) % LABEL_EVERY_N_HOURS == 0) {
-                    val groupLeft = barLeft(barsAreaLeft, barWidthPx, spacingPx, barIndex)
-                    canvas.drawText(formatter.format(hourStart), groupLeft, y, paint)
-                }
-                barIndex += entriesInHour.size
-            }
-            // Trailing label for the end of the trend's last bar.
-            if ((groups.size + grpIndex) % LABEL_EVERY_N_HOURS == 0) {
-                groups.lastOrNull()?.let { (lastHourStart, entriesInHour) ->
-                    if (entriesInHour.size == 4) {
-                        val lastBarRight = barLeft(barsAreaLeft, barWidthPx, spacingPx, prices.lastIndex) + barWidthPx
-                        canvas.drawText(
-                            formatter.format(lastHourStart.plusHours(1)),
-                            lastBarRight + spacingPx,
-                            y,
-                            paint,
-                        )
-                    }
-                }
-            }
-        }
-
-        private fun barLeft(barsAreaLeft: Float, barWidthPx: Float, spacingPx: Float, index: Int): Float =
-            barsAreaLeft + spacingPx + index * (barWidthPx + spacingPx)
+        return bitmap
     }
+
+    private fun drawHeadline(canvas: Canvas, currentPrice: Double?, unit: String, chartTop: Float) {
+        if (currentPrice == null) return
+        val text = formatPrice(currentPrice) + if (unit.isNotBlank()) " $unit" else ""
+        val paint = textPaint(HEADLINE_TEXT_SIZE_SP, bold = true).apply {
+            color = ElectricityPriceTile.colorForPrice(currentPrice)
+        }
+        val fm = paint.fontMetrics
+        // Position the text so its descent line (visual bottom) sits HEADLINE_TO_CHART_GAP_DP above chartTop.
+        val baseline = (chartTop - HEADLINE_TO_CHART_GAP_DP.dpToPx()) - fm.descent
+        canvas.drawText(text, centerXPx, baseline, paint)
+    }
+
+    /** A dark gray horizontal line for every price tag on the value axis above 0, at its exact linear position. */
+    private fun drawGridLines(
+        canvas: Canvas,
+        ticks: List<Int>,
+        axisMax: Int,
+        left: Float,
+        right: Float,
+        chartTop: Float,
+        chartBottom: Float,
+    ) {
+        val paint = linePaint(GRID_LINE_COLOR, GRID_LINE_THICKNESS_DP)
+        ticks.filter { it != 0 }.forEach { tick ->
+            val y = chartBottom - (tick.toFloat() / axisMax) * (chartBottom - chartTop)
+            canvas.drawLine(left, y, right, y, paint)
+        }
+    }
+
+    private fun drawAxisLabels(
+        canvas: Canvas,
+        ticks: List<Int>,
+        axisMax: Int,
+        paint: Paint,
+        sideMarginPx: Float,
+        axisLabelWidthPx: Float,
+        chartTop: Float,
+        chartBottom: Float,
+    ) {
+        val leftX = sideMarginPx + axisLabelWidthPx / 2f
+        val rightX = widthPx - sideMarginPx - axisLabelWidthPx / 2f
+        ticks.forEach { tick ->
+            val y = chartBottom - (tick.toFloat() / axisMax) * (chartBottom - chartTop)
+            canvas.drawCenteredText(tick.toString(), paint, leftX, y)
+            canvas.drawCenteredText(tick.toString(), paint, rightX, y)
+        }
+    }
+
+    /** One bar per entry in [prices], scaled against the fixed 0..[axisMax] value axis. */
+    private fun drawBars(
+        canvas: Canvas,
+        prices: List<HourlyPrice>,
+        axisMax: Int,
+        barsAreaLeft: Float,
+        barWidthPx: Float,
+        spacingPx: Float,
+        chartBottom: Float,
+        barAreaHeightPx: Float,
+    ) {
+        val minBarHeightPx = BAR_MIN_HEIGHT_DP.dpToPx()
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        val interval = if (prices.size >= 2) Duration.between(prices[0].time, prices[1].time) else Duration.ZERO
+        prices.forEachIndexed { index, entry ->
+            val left = barLeft(barsAreaLeft, barWidthPx, spacingPx, index)
+            val ratio = (entry.price / axisMax).coerceIn(0.0, 1.0)
+            val barHeightPx = minBarHeightPx + ratio.toFloat() * (barAreaHeightPx - minBarHeightPx)
+            paint.color = ElectricityPriceTile.colorForPrice(entry.price)
+            canvas.drawRect(left, chartBottom - barHeightPx, left + barWidthPx, chartBottom, paint)
+        }
+    }
+
+    /**
+     * A dark gray vertical separator at the start of every hour (including the very first bar,
+     * if it lands exactly on the hour), plus one trailing separator after the very last bar if
+     * its interval reaches exactly into the next hour. Drawn in the gap between bars, not
+     * behind/under a bar, so it's never hidden.
+     */
+    private fun drawHourSeparators(
+        canvas: Canvas,
+        prices: List<HourlyPrice>,
+        barsAreaLeft: Float,
+        barWidthPx: Float,
+        spacingPx: Float,
+        chartTop: Float,
+        chartBottom: Float,
+    ) {
+        val interval = if (prices.size >= 2) Duration.between(prices[0].time, prices[1].time) else Duration.ZERO
+        fun isHourStart(time: ZonedDateTime) = time == time.truncatedTo(ChronoUnit.HOURS)
+        fun isHourEnd(time: ZonedDateTime) = interval > Duration.ZERO && isHourStart(time.plus(interval))
+
+        val paint = linePaint(HOUR_SEPARATOR_COLOR, HOUR_SEPARATOR_THICKNESS_DP)
+        fun drawAt(x: Float) = canvas.drawLine(x, chartTop, x, chartBottom, paint)
+
+        if (isHourStart(prices.first().time)) {
+            drawAt(barLeft(barsAreaLeft, barWidthPx, spacingPx, 0) - spacingPx / 2f)
+        }
+        prices.forEachIndexed { index, entry ->
+            val showSeparator = if (index < prices.lastIndex) {
+                isHourStart(prices[index + 1].time)
+            } else {
+                isHourEnd(entry.time)
+            }
+            if (showSeparator) {
+                drawAt(barLeft(barsAreaLeft, barWidthPx, spacingPx, index) + barWidthPx + spacingPx / 2f)
+            }
+        }
+    }
+
+    /**
+     * Hour-only labels under the bars (minutes omitted), shown every [LABEL_EVERY_N_HOURS]
+     * hours, centered under the start of their hour, plus one extra trailing label marking the
+     * end of the very last bar (e.g. bars ending at 13:45 also get a "14" label).
+     */
+    private fun drawHourLabels(
+        canvas: Canvas,
+        prices: List<HourlyPrice>,
+        barsAreaLeft: Float,
+        barWidthPx: Float,
+        spacingPx: Float,
+        chartBottom: Float,
+    ) {
+        val formatter = DateTimeFormatter.ofPattern("HH")
+        val paint = textPaint(HOUR_LABEL_TEXT_SIZE_SP)
+        val fm = paint.fontMetrics
+        val y = chartBottom + CHART_TO_HOUR_LABELS_GAP_DP.dpToPx() - fm.ascent
+
+        val groups: List<Pair<ZonedDateTime, List<HourlyPrice>>> = prices
+            .groupBy { it.time.truncatedTo(ChronoUnit.HOURS) }
+            .toList()
+
+        var barIndex = 0
+        var grpIndex = 0
+        groups.forEachIndexed { groupIndex, (hourStart, entriesInHour) ->
+            if ((groupIndex == 0) && (entriesInHour.size != 4)) {
+                grpIndex = 1
+            } else if ((groupIndex + grpIndex) % LABEL_EVERY_N_HOURS == 0) {
+                val groupLeft = barLeft(barsAreaLeft, barWidthPx, spacingPx, barIndex)
+                canvas.drawText(formatter.format(hourStart), groupLeft, y, paint)
+            }
+            barIndex += entriesInHour.size
+        }
+        // Trailing label for the end of the trend's last bar.
+        if ((groups.size + grpIndex) % LABEL_EVERY_N_HOURS == 0) {
+            groups.lastOrNull()?.let { (lastHourStart, entriesInHour) ->
+                if (entriesInHour.size == 4) {
+                    val lastBarRight = barLeft(barsAreaLeft, barWidthPx, spacingPx, prices.lastIndex) + barWidthPx
+                    canvas.drawText(
+                        formatter.format(lastHourStart.plusHours(1)),
+                        lastBarRight + spacingPx,
+                        y,
+                        paint,
+                    )
+                }
+            }
+        }
+    }
+
+    private fun barLeft(barsAreaLeft: Float, barWidthPx: Float, spacingPx: Float, index: Int): Float =
+        barsAreaLeft + spacingPx + index * (barWidthPx + spacingPx)
 }
