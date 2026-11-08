@@ -26,6 +26,7 @@ import io.github.timoptr.mdiicons.generated.HomeHeart
 import io.github.timoptr.mdiicons.generated.Leak
 import io.github.timoptr.mdiicons.generated.Message
 import io.github.timoptr.mdiicons.generated.MessageOff
+import io.github.timoptr.mdiicons.generated.Skull
 import io.github.timoptr.mdiicons.generated.Star
 import io.github.timoptr.mdiicons.generated.StarCircleOutline
 import io.github.timoptr.mdiicons.generated.TextBox
@@ -93,6 +94,7 @@ fun SettingsView(
     onClickTemplateTiles: () -> Unit,
     onClickThermostatTiles: () -> Unit,
     onClickElectricityPriceTile: () -> Unit,
+    onClickDiabloWorldBossTile: () -> Unit,
     onAssistantAppAllowed: (Boolean) -> Unit,
     onClickNotifications: () -> Unit,
 ) {
@@ -218,6 +220,13 @@ fun SettingsView(
                 )
             }
             item {
+                SecondarySettingsChip(
+                    icon = Mdi.Skull,
+                    label = stringResource(commonR.string.diablo_world_boss_tile),
+                    onClick = onClickDiabloWorldBossTile,
+                )
+            }
+            item {
                 ListHeader(
                     id = commonR.string.sensors,
                 )
@@ -316,6 +325,7 @@ private fun PreviewSettingsView() {
         onClickTemplateTiles = {},
         onClickThermostatTiles = {},
         onClickElectricityPriceTile = {},
+        onClickDiabloWorldBossTile = {},
         onAssistantAppAllowed = {},
         onClickNotifications = {},
     )

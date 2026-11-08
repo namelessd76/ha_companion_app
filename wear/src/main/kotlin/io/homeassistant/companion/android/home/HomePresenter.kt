@@ -1,6 +1,7 @@
 package io.homeassistant.companion.android.home
 
 import io.homeassistant.companion.android.common.data.integration.Entity
+import io.homeassistant.companion.android.common.data.prefs.impl.entities.DiabloWorldBossTileConfig
 import io.homeassistant.companion.android.common.data.prefs.impl.entities.ElectricityPriceTileConfig
 import io.homeassistant.companion.android.common.data.prefs.impl.entities.TemplateTileConfig
 import io.homeassistant.companion.android.common.data.websocket.WebSocketState
@@ -58,4 +59,6 @@ interface HomePresenter {
 
     suspend fun getElectricityPriceTileConfig(): ElectricityPriceTileConfig
     suspend fun setElectricityPriceTileConfig(config: ElectricityPriceTileConfig)
+    suspend fun getDiabloWorldBossTileConfig(): DiabloWorldBossTileConfig
+    suspend fun setDiabloWorldBossTileConfig(config: DiabloWorldBossTileConfig)
 }

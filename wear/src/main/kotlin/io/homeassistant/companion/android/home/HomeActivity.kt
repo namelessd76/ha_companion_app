@@ -22,6 +22,7 @@ import io.homeassistant.companion.android.home.views.DEEPLINK_PREFIX_SET_CAMERA_
 import io.homeassistant.companion.android.home.views.DEEPLINK_PREFIX_SET_SHORTCUT_TILE
 import io.homeassistant.companion.android.home.views.DEEPLINK_PREFIX_SET_TEMPLATE_TILE
 import io.homeassistant.companion.android.home.views.DEEPLINK_PREFIX_SET_THERMOSTAT_TILE
+import io.homeassistant.companion.android.home.views.DEEPLINK_SET_DIABLO_WORLD_BOSS_TILE
 import io.homeassistant.companion.android.home.views.DEEPLINK_SET_ELECTRICITY_PRICE_TILE
 import io.homeassistant.companion.android.home.views.LoadHomePage
 import io.homeassistant.companion.android.onboarding.OnboardingActivity
@@ -60,6 +61,7 @@ class HomeActivity :
         sealed interface LaunchMode {
             object ThermostatTile : LaunchMode
             object CameraTile : LaunchMode
+            object DiabloWorldBossTile : LaunchMode
         }
 
         fun getLaunchAction(packageName: String, tileId: Int, launchMode: LaunchMode): ActionBuilders.LaunchAction {
@@ -74,6 +76,7 @@ class HomeActivity :
                         when (launchMode) {
                             LaunchMode.ThermostatTile -> OpenTileSettingsActivity.CONFIG_THERMOSTAT_TILE
                             LaunchMode.CameraTile -> OpenTileSettingsActivity.CONFIG_CAMERA_TILE
+                            LaunchMode.DiabloWorldBossTile -> OpenTileSettingsActivity.CONFIG_DIABLO_WORLD_BOSS_TILE
                         },
                     )
                         .build(),
@@ -125,6 +128,14 @@ class HomeActivity :
             context,
             HomeActivity::class.java,
         )
+
+        /** @return an intent opening the Diablo IV world boss tile settings. */
+        fun getDiabloWorldBossTileSettingsIntent(context: Context) = Intent(
+            Intent.ACTION_VIEW,
+            DEEPLINK_SET_DIABLO_WORLD_BOSS_TILE.toUri(),
+            context,
+            HomeActivity::class.java,
+        )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -133,7 +144,8 @@ class HomeActivity :
         presenter.init(this)
         val launchMode = intent.getStringExtra(LAUNCH_MODE)
         if (launchMode == OpenTileSettingsActivity.CONFIG_THERMOSTAT_TILE ||
-            launchMode == OpenTileSettingsActivity.CONFIG_CAMERA_TILE
+            launchMode == OpenTileSettingsActivity.CONFIG_CAMERA_TILE ||
+            launchMode == OpenTileSettingsActivity.CONFIG_DIABLO_WORLD_BOSS_TILE
         ) {
             startActivity(
                 OpenTileSettingsActivity.newInstance(

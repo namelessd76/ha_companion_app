@@ -1,5 +1,6 @@
 package io.homeassistant.companion.android.common.data.prefs
 
+import io.homeassistant.companion.android.common.data.prefs.impl.entities.DiabloWorldBossTileConfig
 import io.homeassistant.companion.android.common.data.prefs.impl.entities.ElectricityPriceTileConfig
 import io.homeassistant.companion.android.common.data.prefs.impl.entities.TemplateTileConfig
 
@@ -23,4 +24,10 @@ interface WearPrefsRepository {
     suspend fun setWearFavoritesOnly(enabled: Boolean)
     suspend fun getElectricityPriceTileConfig(): ElectricityPriceTileConfig
     suspend fun setElectricityPriceTileConfig(config: ElectricityPriceTileConfig)
+
+    /** @return the Diablo IV world boss tile configuration, or defaults when never saved. */
+    suspend fun getDiabloWorldBossTileConfig(): DiabloWorldBossTileConfig
+
+    /** Persists the Diablo IV world boss tile configuration. */
+    suspend fun setDiabloWorldBossTileConfig(config: DiabloWorldBossTileConfig)
 }

@@ -1,6 +1,7 @@
 package io.homeassistant.companion.android.home.views
 
 import android.content.Intent
+import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -8,10 +9,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import androidx.navigation.navDeepLink
+import androidx.wear.compose.material3.DatePicker
+import androidx.wear.compose.material3.TimePicker
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
@@ -27,6 +31,9 @@ import io.homeassistant.companion.android.tiles.ShortcutsTile
 import io.homeassistant.companion.android.tiles.TemplateTile
 import io.homeassistant.companion.android.tiles.ThermostatTile
 import io.homeassistant.companion.android.views.ChooseEntityView
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
 
 private const val ARG_SCREEN_SENSOR_MANAGER_ID = "sensorManagerId"
 private const val ARG_SCREEN_CAMERA_TILE_ID = "cameraTileId"
@@ -65,6 +72,12 @@ private const val SCREEN_SET_ELECTRICITY_PRICE_TILE = "set_electricity_price_til
 private const val SCREEN_SET_ELECTRICITY_PRICE_TILE_ENTITY = "entity"
 private const val SCREEN_SET_ELECTRICITY_PRICE_TILE_CURRENT_PRICE_ENTITY = "current_price_entity"
 private const val SCREEN_SET_ELECTRICITY_PRICE_TILE_REFRESH_INTERVAL = "refresh_interval"
+private const val ROUTE_DIABLO_WORLD_BOSS_TILE = "diablo_world_boss_tile"
+private const val SCREEN_SET_DIABLO_WORLD_BOSS_TILE = "set_diablo_world_boss_tile"
+private const val SCREEN_SET_DIABLO_REFERENCE_DATE = "reference_date"
+private const val SCREEN_SET_DIABLO_REFERENCE_TIME = "reference_time"
+private const val SCREEN_SET_DIABLO_QUIET_START = "quiet_start"
+private const val SCREEN_SET_DIABLO_QUIET_END = "quiet_end"
 private const val SENSOR_DOMAIN = "sensor"
 
 const val DEEPLINK_SENSOR_MANAGER = "ha_wear://$SCREEN_SINGLE_SENSOR_MANAGER"
@@ -73,6 +86,7 @@ const val DEEPLINK_PREFIX_SET_THERMOSTAT_TILE = "ha_wear://$SCREEN_SET_THERMOSTA
 const val DEEPLINK_PREFIX_SET_SHORTCUT_TILE = "ha_wear://$SCREEN_SET_SHORTCUTS_TILE"
 const val DEEPLINK_PREFIX_SET_TEMPLATE_TILE = "ha_wear://$SCREEN_SET_TILE_TEMPLATE"
 const val DEEPLINK_SET_ELECTRICITY_PRICE_TILE = "ha_wear://$SCREEN_SET_ELECTRICITY_PRICE_TILE"
+const val DEEPLINK_SET_DIABLO_WORLD_BOSS_TILE = "ha_wear://$SCREEN_SET_DIABLO_WORLD_BOSS_TILE"
 
 @Composable
 fun LoadHomePage(mainViewModel: MainViewModel) {
@@ -198,6 +212,11 @@ fun LoadHomePage(mainViewModel: MainViewModel) {
                     onClickElectricityPriceTile = {
                         swipeDismissableNavController.navigate(
                             "$ROUTE_ELECTRICITY_PRICE_TILE/$SCREEN_SET_ELECTRICITY_PRICE_TILE",
+                        )
+                    },
+                    onClickDiabloWorldBossTile = {
+                        swipeDismissableNavController.navigate(
+                            "$ROUTE_DIABLO_WORLD_BOSS_TILE/$SCREEN_SET_DIABLO_WORLD_BOSS_TILE",
                         )
                     },
                     onAssistantAppAllowed = mainViewModel::setAssistantApp,
@@ -583,6 +602,94 @@ fun LoadHomePage(mainViewModel: MainViewModel) {
                     ElectricityPriceTile.requestUpdate(context)
                     swipeDismissableNavController.navigateUp()
                 }
+            }
+            composable(
+                route = "$ROUTE_DIABLO_WORLD_BOSS_TILE/$SCREEN_SET_DIABLO_WORLD_BOSS_TILE",
+                deepLinks = listOf(
+                    navDeepLink { uriPattern = DEEPLINK_SET_DIABLO_WORLD_BOSS_TILE },
+                ),
+            ) {
+                val exactAlarmLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.StartActivityForResult(),
+                ) { mainViewModel.refreshCanScheduleExactAlarms() }
+                val config = uiState.diabloWorldBossTileConfig
+                SetDiabloWorldBossTileView(
+                    config = config,
+                    nextSpawn = mainViewModel.diabloNextSpawn(),
+                    showExactAlarmWarning = config.notificationsEnabled && !uiState.canScheduleExactAlarms,
+                    onSelectReferenceDate = {
+                        swipeDismissableNavController.navigate(
+                            "$ROUTE_DIABLO_WORLD_BOSS_TILE/$SCREEN_SET_DIABLO_REFERENCE_DATE",
+                        )
+                    },
+                    onSelectReferenceTime = {
+                        swipeDismissableNavController.navigate(
+                            "$ROUTE_DIABLO_WORLD_BOSS_TILE/$SCREEN_SET_DIABLO_REFERENCE_TIME",
+                        )
+                    },
+                    onNotificationsEnabled = mainViewModel::setDiabloNotificationsEnabled,
+                    onQuietHoursEnabled = mainViewModel::setDiabloQuietHoursEnabled,
+                    onSelectQuietStart = {
+                        swipeDismissableNavController.navigate(
+                            "$ROUTE_DIABLO_WORLD_BOSS_TILE/$SCREEN_SET_DIABLO_QUIET_START",
+                        )
+                    },
+                    onSelectQuietEnd = {
+                        swipeDismissableNavController.navigate(
+                            "$ROUTE_DIABLO_WORLD_BOSS_TILE/$SCREEN_SET_DIABLO_QUIET_END",
+                        )
+                    },
+                    onAllowExactAlarms = {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            exactAlarmLauncher.launch(
+                                Intent(
+                                    Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                                    "package:${context.packageName}".toUri(),
+                                ),
+                            )
+                        }
+                    },
+                )
+            }
+            composable("$ROUTE_DIABLO_WORLD_BOSS_TILE/$SCREEN_SET_DIABLO_REFERENCE_DATE") {
+                val today = LocalDate.now()
+                DatePicker(
+                    initialDate = uiState.diabloWorldBossTileConfig.referenceSpawn
+                        ?.atZone(ZoneId.systemDefault())?.toLocalDate() ?: today,
+                    onDatePicked = { date ->
+                        mainViewModel.setDiabloReferenceDate(date)
+                        swipeDismissableNavController.navigateUp()
+                    },
+                    maxValidDate = today,
+                )
+            }
+            composable("$ROUTE_DIABLO_WORLD_BOSS_TILE/$SCREEN_SET_DIABLO_REFERENCE_TIME") {
+                TimePicker(
+                    initialTime = uiState.diabloWorldBossTileConfig.referenceSpawn
+                        ?.atZone(ZoneId.systemDefault())?.toLocalTime() ?: LocalTime.now(),
+                    onTimePicked = { time ->
+                        mainViewModel.setDiabloReferenceTime(time)
+                        swipeDismissableNavController.navigateUp()
+                    },
+                )
+            }
+            composable("$ROUTE_DIABLO_WORLD_BOSS_TILE/$SCREEN_SET_DIABLO_QUIET_START") {
+                TimePicker(
+                    initialTime = uiState.diabloWorldBossTileConfig.quietStart,
+                    onTimePicked = { time ->
+                        mainViewModel.setDiabloQuietStart(time)
+                        swipeDismissableNavController.navigateUp()
+                    },
+                )
+            }
+            composable("$ROUTE_DIABLO_WORLD_BOSS_TILE/$SCREEN_SET_DIABLO_QUIET_END") {
+                TimePicker(
+                    initialTime = uiState.diabloWorldBossTileConfig.quietEnd,
+                    onTimePicked = { time ->
+                        mainViewModel.setDiabloQuietEnd(time)
+                        swipeDismissableNavController.navigateUp()
+                    },
+                )
             }
             composable(route = SCREEN_MANAGE_SENSORS) {
                 SensorsView(

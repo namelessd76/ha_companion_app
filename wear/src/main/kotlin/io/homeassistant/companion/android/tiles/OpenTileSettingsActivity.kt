@@ -26,6 +26,7 @@ class OpenTileSettingsActivity : AppCompatActivity() {
         const val CONFIG_TEMPLATE_TILE = "ConfigTemplateTile"
         const val CONFIG_THERMOSTAT_TILE = "ConfigThermostatTile"
         const val CONFIG_ELECTRICITY_PRICE_TILE = "ConfigElectricityPriceTile"
+        const val CONFIG_DIABLO_WORLD_BOSS_TILE = "ConfigDiabloWorldBossTile"
 
         fun newInstance(context: ComponentActivity, action: String, tileId: Int): Intent {
             return Intent(
@@ -44,6 +45,12 @@ class OpenTileSettingsActivity : AppCompatActivity() {
             extras?.containsKey(TILE_ID_CLOCKWORK) == true -> extras.getInt(TILE_ID_CLOCKWORK)
             extras?.containsKey(TILE_ID_KEY) == true -> extras.getInt(TILE_ID_KEY)
             else -> null
+        }
+        // A single global tile: its settings don't depend on the tile instance.
+        if (intent.action == CONFIG_DIABLO_WORLD_BOSS_TILE) {
+            startActivity(HomeActivity.getDiabloWorldBossTileSettingsIntent(context = this))
+            finish()
+            return
         }
         tileId?.takeIf { it != 0 }?.let {
             val settingsIntent = when (intent.action) {

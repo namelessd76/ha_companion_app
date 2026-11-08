@@ -18,6 +18,7 @@ const val CHANNEL_DOWNLOADS = "downloads"
 const val CHANNEL_GENERAL = "general"
 const val CHANNEL_BEACON_MONITOR = "beacon"
 const val CHANNEL_ASSIST_LISTENING = "assist_listening"
+const val CHANNEL_DIABLO_WORLD_BOSS = "diablo_world_boss"
 
 /**
  * List of all notification channel IDs created by the app.
@@ -40,4 +41,5 @@ val appCreatedChannels = listOf(
     CHANNEL_GENERAL,
     CHANNEL_BEACON_MONITOR,
     CHANNEL_ASSIST_LISTENING,
+    CHANNEL_DIABLO_WORLD_BOSS,
 )

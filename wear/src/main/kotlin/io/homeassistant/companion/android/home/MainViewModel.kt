@@ -18,6 +18,7 @@ import io.homeassistant.companion.android.common.data.integration.display.Entiti
 import io.homeassistant.companion.android.common.data.integration.display.EntityDisplay
 import io.homeassistant.companion.android.common.data.integration.display.EntityDisplayState
 import io.homeassistant.companion.android.common.data.integration.display.EntityDisplayWithContext
+import io.homeassistant.companion.android.common.data.prefs.impl.entities.DiabloWorldBossTileConfig
 import io.homeassistant.companion.android.common.data.prefs.impl.entities.ElectricityPriceTileConfig
 import io.homeassistant.companion.android.common.data.prefs.impl.entities.TemplateTileConfig
 import io.homeassistant.companion.android.common.data.servers.ServerManager
@@ -36,7 +37,15 @@ import io.homeassistant.companion.android.database.wear.ThermostatTileDao
 import io.homeassistant.companion.android.database.wear.getAll
 import io.homeassistant.companion.android.database.wear.getAllFlow
 import io.homeassistant.companion.android.sensors.SensorReceiver
+import io.homeassistant.companion.android.tiles.diablo.DiabloWorldBossAlarmScheduler
+import io.homeassistant.companion.android.tiles.diablo.DiabloWorldBossSchedule
+import io.homeassistant.companion.android.tiles.diablo.DiabloWorldBossTile
+import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
 import javax.inject.Inject
+import kotlin.time.Clock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -48,6 +57,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 
+private const val SECONDS_PER_MINUTE = 60
+
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val entitiesForDisplayManager: EntitiesForDisplayManager,
@@ -57,6 +68,7 @@ class MainViewModel @Inject constructor(
     private val cameraTileDao: CameraTileDao,
     private val thermostatTileDao: ThermostatTileDao,
     private val managers: Set<@JvmSuppressWildcards SensorManager>,
+    private val clock: Clock,
     application: Application,
 ) : AndroidViewModel(application) {
 
@@ -110,6 +122,8 @@ class MainViewModel @Inject constructor(
         val areNotificationsAllowed: Boolean = false,
         val templateTiles: Map<Int, TemplateTileConfig> = emptyMap(),
         val electricityPriceTileConfig: ElectricityPriceTileConfig = ElectricityPriceTileConfig(),
+        val diabloWorldBossTileConfig: DiabloWorldBossTileConfig = DiabloWorldBossTileConfig(),
+        val canScheduleExactAlarms: Boolean = true,
         val shortcutEntitiesMap: Map<Int?, List<SimplifiedEntity>> = emptyMap(),
         val loadingState: LoadingState = LoadingState.LOADING,
         val entitiesByArea: Map<String, List<String>> = emptyMap(),
@@ -217,6 +231,8 @@ class MainViewModel @Inject constructor(
                     isShowShortcutTextEnabled = homePresenter.getShowShortcutText(),
                     isFavoritesOnly = homePresenter.getWearFavoritesOnly(),
                     electricityPriceTileConfig = homePresenter.getElectricityPriceTileConfig(),
+                    diabloWorldBossTileConfig = homePresenter.getDiabloWorldBossTileConfig(),
+                    canScheduleExactAlarms = DiabloWorldBossAlarmScheduler.canScheduleExactAlarms(app),
                     isAssistantAppAllowed = app.packageManager.getComponentEnabledSetting(assistantAppComponent) !=
                         PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
                     areNotificationsAllowed = NotificationManagerCompat.from(app).areNotificationsEnabled(),
@@ -565,6 +581,59 @@ class MainViewModel @Inject constructor(
 
     fun setElectricityPriceTileRefreshInterval(interval: Int) =
         updateElectricityPriceTileConfig { it.copy(refreshInterval = interval) }
+
+    private fun now(): Instant = Instant.ofEpochMilli(clock.now().toEpochMilliseconds())
+
+    /**
+     * Saves the Diablo IV world boss tile config produced by [transform], then reschedules the reminder
+     * alarm and refreshes the tile so both reflect it right away.
+     */
+    private fun updateDiabloWorldBossTileConfig(transform: (DiabloWorldBossTileConfig) -> DiabloWorldBossTileConfig) {
+        viewModelScope.launch {
+            val updated = transform(mainViewUiState.value.diabloWorldBossTileConfig)
+            homePresenter.setDiabloWorldBossTileConfig(updated)
+            updateUiState { it.copy(diabloWorldBossTileConfig = updated) }
+            DiabloWorldBossAlarmScheduler.update(app, updated, now())
+            DiabloWorldBossTile.requestUpdate(app)
+        }
+    }
+
+    /** Sets the local [date] (in the current time zone) of the reference world boss spawn. */
+    fun setDiabloReferenceDate(date: LocalDate) = updateDiabloWorldBossTileConfig {
+        val reference = DiabloWorldBossSchedule.withLocalDate(it.referenceSpawn, date, ZoneId.systemDefault(), now())
+        it.copy(referenceSpawnEpochMillis = reference.toEpochMilli())
+    }
+
+    /** Sets the local [time] (in the current time zone) of the reference world boss spawn. */
+    fun setDiabloReferenceTime(time: LocalTime) = updateDiabloWorldBossTileConfig {
+        val reference = DiabloWorldBossSchedule.withLocalTime(it.referenceSpawn, time, ZoneId.systemDefault(), now())
+        it.copy(referenceSpawnEpochMillis = reference.toEpochMilli())
+    }
+
+    /** @return the next world boss spawn from now, or `null` when no reference spawn is configured. */
+    fun diabloNextSpawn(): Instant? = mainViewUiState.value.diabloWorldBossTileConfig.referenceSpawn
+        ?.let { DiabloWorldBossSchedule.nextSpawn(it, now()) }
+
+    fun setDiabloNotificationsEnabled(enabled: Boolean) = updateDiabloWorldBossTileConfig {
+        it.copy(notificationsEnabled = enabled)
+    }
+
+    fun setDiabloQuietHoursEnabled(enabled: Boolean) = updateDiabloWorldBossTileConfig {
+        it.copy(quietHoursEnabled = enabled)
+    }
+
+    fun setDiabloQuietStart(time: LocalTime) = updateDiabloWorldBossTileConfig {
+        it.copy(quietStartMinuteOfDay = time.toSecondOfDay() / SECONDS_PER_MINUTE)
+    }
+
+    fun setDiabloQuietEnd(time: LocalTime) = updateDiabloWorldBossTileConfig {
+        it.copy(quietEndMinuteOfDay = time.toSecondOfDay() / SECONDS_PER_MINUTE)
+    }
+
+    /** Re-reads whether exact alarms are allowed, e.g. after returning from the system settings. */
+    fun refreshCanScheduleExactAlarms() {
+        updateUiState { it.copy(canScheduleExactAlarms = DiabloWorldBossAlarmScheduler.canScheduleExactAlarms(app)) }
+    }
 
     fun setTileShortcut(tileId: Int?, index: Int, entity: SimplifiedEntity) {
         viewModelScope.launch {

@@ -209,13 +209,19 @@ class EntityStateDataSourceService : SuspendingComplicationDataSourceService() {
         } else {
             null
         }
-        return if (request.complicationType == ComplicationType.SHORT_TEXT) {
-            ShortTextComplicationData.Builder(
+        // The returned type must match the requested one, or the system crashes the app.
+        return when (request.complicationType) {
+            ComplicationType.SHORT_TEXT -> ShortTextComplicationData.Builder(
                 text = text,
                 contentDescription = contentDescription,
             ).setTapAction(tapAction).build()
-        } else {
-            LongTextComplicationData.Builder(
+            ComplicationType.RANGED_VALUE -> RangedValueComplicationData.Builder(
+                value = 0f,
+                min = 0f,
+                max = 1f,
+                contentDescription = contentDescription,
+            ).setText(text).setTapAction(tapAction).build()
+            else -> LongTextComplicationData.Builder(
                 text = text,
                 contentDescription = contentDescription,
             ).setTapAction(tapAction).build()

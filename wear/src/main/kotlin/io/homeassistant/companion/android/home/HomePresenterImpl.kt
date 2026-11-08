@@ -9,6 +9,7 @@ import io.homeassistant.companion.android.common.data.integration.IntegrationDom
 import io.homeassistant.companion.android.common.data.integration.IntegrationDomains.FAN_DOMAIN
 import io.homeassistant.companion.android.common.data.integration.IntegrationDomains.LIGHT_DOMAIN
 import io.homeassistant.companion.android.common.data.prefs.WearPrefsRepository
+import io.homeassistant.companion.android.common.data.prefs.impl.entities.DiabloWorldBossTileConfig
 import io.homeassistant.companion.android.common.data.prefs.impl.entities.ElectricityPriceTileConfig
 import io.homeassistant.companion.android.common.data.prefs.impl.entities.TemplateTileConfig
 import io.homeassistant.companion.android.common.data.servers.ServerManager
@@ -329,5 +330,13 @@ class HomePresenterImpl @Inject constructor(
 
     override suspend fun setElectricityPriceTileConfig(config: ElectricityPriceTileConfig) {
         wearPrefsRepository.setElectricityPriceTileConfig(config)
+    }
+
+    override suspend fun getDiabloWorldBossTileConfig(): DiabloWorldBossTileConfig {
+        return wearPrefsRepository.getDiabloWorldBossTileConfig()
+    }
+
+    override suspend fun setDiabloWorldBossTileConfig(config: DiabloWorldBossTileConfig) {
+        wearPrefsRepository.setDiabloWorldBossTileConfig(config)
     }
 }
