@@ -67,7 +67,8 @@ class ElectricityPriceActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         loadChart()
-        // Tapping the complication used to refresh it, keep it up to date when opening the chart.
+        // Tapping the complication used to refresh it, keep it up to date when opening the chart
+        // (the price complication only fetches again when a new quarter of an hour has started).
         ComplicationDataSourceUpdateRequester
             .create(this, ComponentName(this, EntityStateDataSourceService::class.java))
             .requestUpdateAll()

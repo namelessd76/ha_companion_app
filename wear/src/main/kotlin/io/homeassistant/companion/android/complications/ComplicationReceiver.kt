@@ -27,6 +27,8 @@ class ComplicationReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
             UPDATE_COMPLICATION -> updateComplication(context, intent.getIntExtra(EXTRA_ID, -1))
+            // Quarter-hour electricity price refresh; text complications just return their current state.
+            ElectricityPriceComplicationSchedule.ACTION_REFRESH -> updateAllComplications(context)
             Intent.ACTION_SCREEN_ON -> launchAsync(scope) { onScreenOn(context) }
         }
     }
