@@ -86,7 +86,7 @@ class DiabloWorldBossReceiver : BroadcastReceiver() {
                 .setName(context.getString(commonR.string.diablo_world_boss_channel))
                 .build(),
         )
-        val spawnText = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)
+        val spawnText = DateTimeFormatter.ofPattern("HH:mm")
             .withZone(ZoneId.systemDefault())
             .format(spawn)
         val notification = NotificationCompat.Builder(context, CHANNEL_DIABLO_WORLD_BOSS)
