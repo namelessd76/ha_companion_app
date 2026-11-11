@@ -1,6 +1,5 @@
 package io.homeassistant.companion.android.tiles
 
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -11,21 +10,23 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
-import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
+import androidx.lifecycle.repeatOnLifecycle
 import dagger.hilt.android.AndroidEntryPoint
 import io.homeassistant.companion.android.common.R as commonR
 import io.homeassistant.companion.android.common.data.prefs.WearPrefsRepository
 import io.homeassistant.companion.android.common.data.servers.ServerManager
-import io.homeassistant.companion.android.complications.EntityStateDataSourceService
 import javax.inject.Inject
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
 /**
  * Full-screen version of [ElectricityPriceTile], opened by tapping a ranged value entity complication
- * (Wear OS offers no way to jump to a specific tile). Tap anywhere to refresh.
+ * (Wear OS offers no way to jump to a specific tile). Tap anywhere to force a new retrieval of the forecast
+ * (see [ElectricityPriceForecastRepository]) and redraw.
  */
 @AndroidEntryPoint
 class ElectricityPriceActivity : ComponentActivity() {
@@ -40,6 +41,9 @@ class ElectricityPriceActivity : ComponentActivity() {
 
     @Inject
     lateinit var wearPrefsRepository: WearPrefsRepository
+
+    @Inject
+    lateinit var forecastRepository: ElectricityPriceForecastRepository
 
     private lateinit var chartView: ImageView
     private lateinit var messageView: TextView
@@ -59,23 +63,25 @@ class ElectricityPriceActivity : ComponentActivity() {
             setBackgroundColor(Color.BLACK)
             addView(chartView, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
             addView(messageView, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
-            setOnClickListener { loadChart() }
+            setOnClickListener {
+                // Redrawn now with the current price, and again once a changed forecast is stored.
+                forecastRepository.refresh()
+                loadChart()
+            }
         }
         setContentView(root)
-    }
 
-    override fun onResume() {
-        super.onResume()
-        loadChart()
-        // Tapping the complication used to refresh it, keep it up to date when opening the chart
-        // (the price complication only fetches again when a new quarter of an hour has started).
-        ComplicationDataSourceUpdateRequester
-            .create(this, ComponentName(this, EntityStateDataSourceService::class.java))
-            .requestUpdateAll()
+        // Draws the chart when shown and whenever the shared forecast changes.
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                forecastRepository.forecast.collect { loadChart() }
+            }
+        }
     }
 
     private fun loadChart() {
-        if (loadJob?.isActive == true) return
+        // A newer request (e.g. a new forecast) replaces the one in progress.
+        loadJob?.cancel()
         loadJob = lifecycleScope.launch {
             val config = wearPrefsRepository.getElectricityPriceTileConfig()
             val message = when {
@@ -91,12 +97,13 @@ class ElectricityPriceActivity : ComponentActivity() {
             try {
                 val bitmap = ElectricityPriceTile.buildChartBitmap(
                     this@ElectricityPriceActivity,
-                    serverManager,
-                    config,
+                    forecastRepository,
                     currentGeometry(),
                 )
                 chartView.setImageBitmap(bitmap)
                 messageView.text = null
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Timber.e(e, "Unable to build electricity price chart")
                 showMessage(getString(commonR.string.electricity_price_tile_no_data))

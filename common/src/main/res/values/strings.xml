@@ -177,6 +177,8 @@
     <string name="complication_entity_invalid">Invalid entity</string>
     <string name="complication_entity_state_content_description">Entity state</string>
     <string name="complication_entity_state_label">Entity state</string>
+    <string name="complication_electricity_price">Electricity price</string>
+    <string name="complication_electricity_price_content_description">Electricity price %1$s</string>
     <string name="complication_entity_state_preview">Preview</string>
     <string name="config">Configuration</string>
     <string name="configure_action">Configure action</string>
@@ -245,7 +247,6 @@
     <string name="electricity_price_tile_no_entity_yet">Edit the tile settings and select an entity with hourly price data</string>
     <string name="electricity_price_tile_no_data">No upcoming price data was found on this entity</string>
     <string name="electricity_price_tile_forecast_entity">Price forecast entity</string>
-    <string name="electricity_price_tile_current_price_entity">Current price entity (optional)</string>
     <string name="diablo_world_boss_tile">Diablo IV world boss tile</string>
     <string name="diablo_world_boss_tile_desc">Counts down to the next Diablo IV world boss spawn</string>
     <string name="diablo_world_boss_tile_no_reference">Set a confirmed spawn time in the tile settings</string>

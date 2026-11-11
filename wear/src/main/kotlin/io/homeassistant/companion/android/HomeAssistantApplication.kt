@@ -18,6 +18,7 @@ import io.homeassistant.companion.android.common.util.SdkVersion
 import io.homeassistant.companion.android.common.util.configureComposeDiagnosticStackTrace
 import io.homeassistant.companion.android.complications.ComplicationReceiver
 import io.homeassistant.companion.android.sensors.SensorReceiver
+import io.homeassistant.companion.android.tiles.ElectricityPriceForecastRepository
 import io.homeassistant.companion.android.tiles.RefreshIntervalMigration
 import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
@@ -32,6 +33,9 @@ open class HomeAssistantApplication : Application() {
 
     @Inject
     lateinit var refreshIntervalMigration: RefreshIntervalMigration
+
+    @Inject
+    lateinit var electricityPriceForecastRepository: ElectricityPriceForecastRepository
 
     override fun onCreate() {
         // We should initialize the logger as early as possible in the lifecycle of the application
@@ -52,6 +56,9 @@ open class HomeAssistantApplication : Application() {
         ioScope.launch {
             refreshIntervalMigration.migrate()
         }
+
+        // Shared by the electricity price tile, chart and complication, retrieved on start and then daily.
+        electricityPriceForecastRepository.start()
 
         val sensorReceiver = SensorReceiver()
         // This will cause the sensor to be updated every time the OS broadcasts that a cable was plugged/unplugged.

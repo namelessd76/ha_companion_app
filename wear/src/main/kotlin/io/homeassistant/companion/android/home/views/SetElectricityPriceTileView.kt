@@ -11,7 +11,6 @@ import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.Text
 import io.github.timoptr.mdiicons.Mdi
 import io.github.timoptr.mdiicons.MdiIcon
-import io.github.timoptr.mdiicons.generated.Cash
 import io.github.timoptr.mdiicons.generated.Flash
 import io.github.timoptr.mdiicons.generated.TimerCog
 import io.github.timoptr.mdiicons.rememberImageVector
@@ -29,9 +28,7 @@ import io.homeassistant.companion.android.views.ThemeLazyColumn
 fun SetElectricityPriceTileView(
     tile: ElectricityPriceTileConfig,
     entityItem: EntityDisplay?,
-    currentPriceEntityItem: EntityDisplay?,
     onSelectEntity: () -> Unit,
-    onSelectCurrentPriceEntity: () -> Unit,
     onSelectRefreshInterval: () -> Unit,
 ) {
     WearAppTheme {
@@ -46,15 +43,6 @@ fun SetElectricityPriceTileView(
                     secondaryLabel = entityItem?.name
                         ?: tile.entityId.ifBlank { stringResource(id = commonR.string.none) },
                     onClick = onSelectEntity,
-                )
-            }
-            item {
-                SettingsButton(
-                    icon = currentPriceEntityItem?.icon ?: Mdi.Cash,
-                    label = stringResource(id = commonR.string.electricity_price_tile_current_price_entity),
-                    secondaryLabel = currentPriceEntityItem?.name
-                        ?: tile.currentPriceEntityId.ifBlank { stringResource(id = commonR.string.none) },
-                    onClick = onSelectCurrentPriceEntity,
                 )
             }
             item {

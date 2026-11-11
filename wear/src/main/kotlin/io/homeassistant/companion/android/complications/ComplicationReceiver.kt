@@ -27,8 +27,9 @@ class ComplicationReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
             UPDATE_COMPLICATION -> updateComplication(context, intent.getIntExtra(EXTRA_ID, -1))
-            // Quarter-hour electricity price refresh; text complications just return their current state.
-            ElectricityPriceComplicationSchedule.ACTION_REFRESH -> updateAllComplications(context)
+            // Quarter-hour electricity price refresh.
+            ElectricityPriceComplicationSchedule.ACTION_REFRESH ->
+                updateAllComplications(context, ElectricityPriceDataSourceService::class.java)
             Intent.ACTION_SCREEN_ON -> launchAsync(scope) { onScreenOn(context) }
         }
     }
@@ -43,18 +44,18 @@ class ComplicationReceiver : BroadcastReceiver() {
             .requestUpdate(id)
     }
 
-    private fun updateAllComplications(context: Context) {
+    private fun updateAllComplications(context: Context, dataSource: Class<*>) {
         ComplicationDataSourceUpdateRequester
             .create(
                 context = context,
-                complicationDataSourceComponent = ComponentName(context, EntityStateDataSourceService::class.java),
+                complicationDataSourceComponent = ComponentName(context, dataSource),
             )
             .requestUpdateAll()
     }
 
     private suspend fun onScreenOn(context: Context) {
         if (!serverManager.isRegistered()) return
-        updateAllComplications(context)
+        updateAllComplications(context, EntityStateDataSourceService::class.java)
     }
 
     companion object {

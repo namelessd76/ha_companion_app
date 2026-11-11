@@ -70,7 +70,6 @@ private const val SCREEN_SET_TILE_TEMPLATE_REFRESH_INTERVAL = "set_tile_template
 private const val ROUTE_ELECTRICITY_PRICE_TILE = "electricity_price_tile"
 private const val SCREEN_SET_ELECTRICITY_PRICE_TILE = "set_electricity_price_tile"
 private const val SCREEN_SET_ELECTRICITY_PRICE_TILE_ENTITY = "entity"
-private const val SCREEN_SET_ELECTRICITY_PRICE_TILE_CURRENT_PRICE_ENTITY = "current_price_entity"
 private const val SCREEN_SET_ELECTRICITY_PRICE_TILE_REFRESH_INTERVAL = "refresh_interval"
 private const val ROUTE_DIABLO_WORLD_BOSS_TILE = "diablo_world_boss_tile"
 private const val SCREEN_SET_DIABLO_WORLD_BOSS_TILE = "set_diablo_world_boss_tile"
@@ -542,17 +541,9 @@ fun LoadHomePage(mainViewModel: MainViewModel) {
                 SetElectricityPriceTileView(
                     tile = config,
                     entityItem = uiState.sensorItems.firstOrNull { it.entityId == config.entityId },
-                    currentPriceEntityItem = uiState.sensorItems.firstOrNull {
-                        it.entityId == config.currentPriceEntityId
-                    },
                     onSelectEntity = {
                         swipeDismissableNavController.navigate(
                             "$ROUTE_ELECTRICITY_PRICE_TILE/$SCREEN_SET_ELECTRICITY_PRICE_TILE_ENTITY",
-                        )
-                    },
-                    onSelectCurrentPriceEntity = {
-                        swipeDismissableNavController.navigate(
-                            "$ROUTE_ELECTRICITY_PRICE_TILE/$SCREEN_SET_ELECTRICITY_PRICE_TILE_CURRENT_PRICE_ENTITY",
                         )
                     },
                     onSelectRefreshInterval = {
@@ -574,24 +565,6 @@ fun LoadHomePage(mainViewModel: MainViewModel) {
                         swipeDismissableNavController.navigateUp()
                     },
                     allowNone = false,
-                )
-            }
-            composable("$ROUTE_ELECTRICITY_PRICE_TILE/$SCREEN_SET_ELECTRICITY_PRICE_TILE_CURRENT_PRICE_ENTITY") {
-                ChooseEntityView(
-                    entitiesByDomainOrder = listOf(SENSOR_DOMAIN),
-                    entitiesByDomain = mapOf(SENSOR_DOMAIN to uiState.sensorItems),
-                    favoriteEntityIds = emptyList(),
-                    onNoneClicked = {
-                        mainViewModel.setElectricityPriceTileCurrentPriceEntity("")
-                        ElectricityPriceTile.requestUpdate(context)
-                        swipeDismissableNavController.navigateUp()
-                    },
-                    onEntitySelected = { entity ->
-                        mainViewModel.setElectricityPriceTileCurrentPriceEntity(entity.entityId)
-                        ElectricityPriceTile.requestUpdate(context)
-                        swipeDismissableNavController.navigateUp()
-                    },
-                    allowNone = true,
                 )
             }
             composable("$ROUTE_ELECTRICITY_PRICE_TILE/$SCREEN_SET_ELECTRICITY_PRICE_TILE_REFRESH_INTERVAL") {

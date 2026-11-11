@@ -37,6 +37,7 @@ import io.homeassistant.companion.android.database.wear.ThermostatTileDao
 import io.homeassistant.companion.android.database.wear.getAll
 import io.homeassistant.companion.android.database.wear.getAllFlow
 import io.homeassistant.companion.android.sensors.SensorReceiver
+import io.homeassistant.companion.android.tiles.ElectricityPriceForecastRepository
 import io.homeassistant.companion.android.tiles.diablo.DiabloWorldBossAlarmScheduler
 import io.homeassistant.companion.android.tiles.diablo.DiabloWorldBossSchedule
 import io.homeassistant.companion.android.tiles.diablo.DiabloWorldBossTile
@@ -69,6 +70,7 @@ class MainViewModel @Inject constructor(
     private val thermostatTileDao: ThermostatTileDao,
     private val managers: Set<@JvmSuppressWildcards SensorManager>,
     private val clock: Clock,
+    private val electricityPriceForecastRepository: ElectricityPriceForecastRepository,
     application: Application,
 ) : AndroidViewModel(application) {
 
@@ -567,17 +569,17 @@ class MainViewModel @Inject constructor(
         transform: (ElectricityPriceTileConfig) -> ElectricityPriceTileConfig,
     ) {
         viewModelScope.launch {
-            val updated = transform(mainViewUiState.value.electricityPriceTileConfig)
+            val previous = mainViewUiState.value.electricityPriceTileConfig
+            val updated = transform(previous)
             homePresenter.setElectricityPriceTileConfig(updated)
             updateUiState { it.copy(electricityPriceTileConfig = updated) }
+            // The shared forecast belongs to the previous entity, retrieve the new one right away.
+            if (updated.entityId != previous.entityId) electricityPriceForecastRepository.refresh()
         }
     }
 
     fun setElectricityPriceTileEntity(entityId: String) =
         updateElectricityPriceTileConfig { it.copy(entityId = entityId) }
-
-    fun setElectricityPriceTileCurrentPriceEntity(entityId: String) =
-        updateElectricityPriceTileConfig { it.copy(currentPriceEntityId = entityId) }
 
     fun setElectricityPriceTileRefreshInterval(interval: Int) =
         updateElectricityPriceTileConfig { it.copy(refreshInterval = interval) }

@@ -26,9 +26,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import dagger.hilt.android.AndroidEntryPoint
 import io.homeassistant.companion.android.R
 import io.homeassistant.companion.android.common.R as commonR
-import io.homeassistant.companion.android.common.data.integration.Entity
 import io.homeassistant.companion.android.common.data.prefs.WearPrefsRepository
-import io.homeassistant.companion.android.common.data.prefs.impl.entities.ElectricityPriceTileConfig
 import io.homeassistant.companion.android.common.data.servers.ServerManager
 import java.io.ByteArrayOutputStream
 import java.time.Duration
@@ -45,6 +43,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
+import kotlin.time.Clock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -108,8 +107,10 @@ private const val RESOURCE_CHART = "chart"
 
 /**
  * Displays the electricity price trend for the next [WINDOW_HOURS] hours as a row of colored bars
- * (one per reported interval, typically 15 minutes), using the entity configured in
- * [WearPrefsRepository.getElectricityPriceTileConfig].
+ * (one per reported interval, typically 15 minutes), using the forecast of the entity configured in
+ * [WearPrefsRepository.getElectricityPriceTileConfig], as retrieved by [ElectricityPriceForecastRepository].
+ * The refresh button forces a new retrieval of that forecast. The tile is redrawn at every quarter of an hour,
+ * when the current price may change (see [ElectricityPriceForecastSchedule.PRICE_SLOT]).
  *
  * The chart is drawn as a bitmap (see [ChartPainter]) rather than built out of ProtoLayout
  * elements: it needs pixel-exact control over margins (so axis labels never get clipped by a round
@@ -202,37 +203,18 @@ class ElectricityPriceTile : TileService() {
         }
 
         /**
-         * Fetches the forecast (and current price) entities from [config] and draws the price chart
-         * for a screen described by [geometry]. Shared by the tile and [ElectricityPriceActivity].
+         * Draws the price chart of the shared forecast of [forecastRepository], headed by its current price, for
+         * a screen described by [geometry]. Shared by the tile and [ElectricityPriceActivity].
          */
-        suspend fun buildChartBitmap(
+        fun buildChartBitmap(
             context: Context,
-            serverManager: ServerManager,
-            config: ElectricityPriceTileConfig,
+            forecastRepository: ElectricityPriceForecastRepository,
             geometry: ChartGeometry,
         ): Bitmap {
-            val forecastEntity = getEntityOrNull(serverManager, config.entityId)
-            val allPrices = forecastEntity?.let { extractHourlyPrices(it.attributes) }.orEmpty()
-            val upcoming = nextWindow(allPrices)
-
-            val currentPriceEntity = getEntityOrNull(serverManager, config.currentPriceEntityId)
-            val currentPrice = currentPriceEntity?.state?.toDoubleOrNull() ?: upcoming.firstOrNull()?.price
-
-            val unit = (currentPriceEntity?.attributes?.get("unit_of_measurement") as? String)
-                ?: (forecastEntity?.attributes?.get("unit_of_measurement") as? String)
-                ?: ""
-
-            return ElectricityPriceChartPainter(context, geometry).paint(upcoming, currentPrice, unit)
-        }
-
-        private suspend fun getEntityOrNull(serverManager: ServerManager, entityId: String): Entity? {
-            if (entityId.isBlank()) return null
-            return try {
-                serverManager.integrationRepository().getEntity(entityId)
-            } catch (e: Exception) {
-                Timber.e(e, "Unable to get entity $entityId")
-                null
-            }
+            val forecast = forecastRepository.forecast.value
+            val upcoming = nextWindow(forecast?.prices.orEmpty())
+            return ElectricityPriceChartPainter(context, geometry)
+                .paint(upcoming, forecastRepository.currentPrice(), forecast?.unit.orEmpty())
         }
     }
 
@@ -245,22 +227,37 @@ class ElectricityPriceTile : TileService() {
     @Inject
     lateinit var wearPrefsRepository: WearPrefsRepository
 
+    @Inject
+    lateinit var forecastRepository: ElectricityPriceForecastRepository
+
+    @Inject
+    lateinit var clock: Clock
+
+    /**
+     * @return how long the tile stays fresh from [now]: until the next quarter of an hour, when the current price
+     *   may change, or the configured [refreshIntervalSeconds] when it is set and shorter.
+     */
+    private fun freshnessMillis(refreshIntervalSeconds: Int, now: Instant): Long {
+        val untilNextQuarter = Duration.between(now, ElectricityPriceForecastSchedule.nextSlotStart(now)).toMillis()
+        val configured = refreshIntervalSeconds.takeIf { it > 1 }?.let { Duration.ofSeconds(it.toLong()).toMillis() }
+        return minOf(untilNextQuarter, configured ?: untilNextQuarter)
+    }
+
     override fun onTileRequest(requestParams: TileRequest): ListenableFuture<Tile> = serviceScope.future {
         if (requestParams.currentState.lastClickableId == MODIFIER_CLICK_REFRESH) {
             if (wearPrefsRepository.getWearHapticFeedback()) hapticClick(applicationContext)
+            // The tile is redrawn now with the current forecast, and again once a changed forecast is stored.
+            forecastRepository.refresh()
         }
 
         val config = wearPrefsRepository.getElectricityPriceTileConfig()
-        val freshness = when {
-            config.refreshInterval <= 1 -> 0
-            else -> config.refreshInterval
-        }
+        val now = Instant.ofEpochMilli(clock.now().toEpochMilliseconds())
 
         Tile.Builder()
             // The chart bitmap depends on live price data, so always have onTileResourcesRequest
             // regenerate it rather than reusing a cached version.
-            .setResourcesVersion(System.currentTimeMillis().toString())
-            .setFreshnessIntervalMillis(freshness.toLong() * 1_000)
+            .setResourcesVersion(now.toEpochMilli().toString())
+            .setFreshnessIntervalMillis(freshnessMillis(config.refreshInterval, now))
             .setTileTimeline(
                 if (!serverManager.isRegistered()) {
                     loggedOutTimeline(
@@ -295,8 +292,7 @@ class ElectricityPriceTile : TileService() {
             if (serverManager.isRegistered() && config.entityId.isNotBlank()) {
                 val bitmap = buildChartBitmap(
                     this@ElectricityPriceTile,
-                    serverManager,
-                    config,
+                    forecastRepository,
                     ChartGeometry.from(requestParams.deviceConfiguration),
                 )
                 val bytes = ByteArrayOutputStream().use { stream ->
